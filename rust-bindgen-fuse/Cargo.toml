@@ -1,0 +1,11 @@
+[package]
+name = "rust-bindgen-fuse"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+bindgen = "0.72.0"
+
+[dependencies]
+nix = "0.30.1"
+singleton-registry = "2.0.0"

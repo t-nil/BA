@@ -1,0 +1,3 @@
+[submodule "libfuse"]
+	path = rust-bindgen-fuse/libfuse
+	url = https://github.com/libfuse/libfuse.git
