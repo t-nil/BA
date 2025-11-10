@@ -7,5 +7,8 @@ edition = "2024"
 bindgen = "0.72.0"
 
 [dependencies]
+derive_more = { version = "2.0.1", features = ["full"] }
 nix = "0.30.1"
 singleton-registry = "2.0.0"
+tracing = { version = "0.1.41", features = ["log"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
