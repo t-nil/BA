@@ -21,8 +21,9 @@
 
 use std::{
     ffi::{CStr, CString, c_char, c_void},
-    path::Path,
+    path::{Path, PathBuf},
     ptr,
+    sync::Arc,
 };
 
 use color_eyre::{
@@ -62,20 +63,111 @@ macro_rules! bail_errno {
     }};
 }
 
+macro_rules! try_errno {
+    ($result:expr) => {{
+        let result: Result<_, (String, Errno)> = $result;
+        match result {
+            Ok(x) => x,
+            Err((e, errno)) => bail_errno!(e, errno),
+        }
+    }};
+}
+
 define_registry!(state);
 
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub struct FuseErrno(pub Errno);
+
+// impl Into<i32> for FuseErrno {
+//     fn into(self) -> i32 {
+//         -(self.0 as i32)
+//     }
+// }
+
+// pub type ErrnoResult<T> = Result<T, Errno>;
+
+// impl ErrnoResult {
+//     pub fn into_fuse_errno(self) -> i32 {
+//         match self {
+//             Self::Success => 0,
+//             Self::Failure(errno) => -(errno as i32),
+//         }
+//     }
+// }
+
+// impl From<ErrnoResult> for i32 {
+//     fn from(value: ErrnoResult) -> Self {
+//         value.into_fuse_errno()
+//     }
+// }
+
+// TODO: builder pattern
 #[derive(Into, Deref)]
 pub struct Stat(libfuse::stat);
 
+/// See https://libfuse.github.io/doxygen/example_2hello_8c.html for minimal set of values.
+///
+/// Refer to https://www.man7.org/linux/man-pages/man0/sys_stat.h.0p.html for infos about the underlying values.
+impl Stat {}
+
 impl Stat {
-    pub fn new(stat: libfuse::stat) -> Self {
+    pub unsafe fn new_unsafe(stat: libfuse::stat) -> Self {
         // assert!(is_valid(stat));
         Self(stat)
+    }
+    /// `mode` - bitmask for the typical modes/permission under *nix (ugw, director etc)
+    pub fn new_file(mode: StatMode, mode_rest: u32, n_link: u64, size: i64) -> Result<Self> {
+        Ok(Self(libfuse::stat {
+            st_nlink: n_link,
+            st_size: size,
+            st_mode: match mode {
+                StatMode::BlockDevice => libfuse::S_IFBLK,
+                StatMode::CharacterDevice => libfuse::S_IFCHR,
+                StatMode::Fifo => libfuse::S_IFIFO,
+                StatMode::RegularFile => libfuse::S_IFREG,
+                StatMode::Directory => libfuse::S_IFDIR,
+                StatMode::SymbolicLink => libfuse::S_IFLNK,
+                StatMode::Socket => libfuse::S_IFSOCK,
+            } + mode_rest, // TODO (important) provide API for flags
+            st_dev: 0,
+            st_ino: 0,
+            st_uid: 0,
+            st_gid: 0,
+            __pad0: Default::default(),
+
+            st_rdev: 0,
+            st_blksize: 0,
+            st_blocks: 0,
+            st_atim: libfuse::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            st_mtim: libfuse::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            st_ctim: libfuse::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            __glibc_reserved: Default::default(),
+        }))
     }
 
     pub fn inner(&self) -> &libfuse::stat {
         &self.0
     }
+}
+
+// TODO encode bitflag values, and provide test functions (https://www.man7.org/linux/man-pages/man0/sys_stat.h.0p.html)
+enum StatMode {
+    BlockDevice,
+    CharacterDevice,
+    Fifo,
+    RegularFile,
+    Directory,
+    SymbolicLink,
+    Socket,
 }
 
 pub struct FuseFileInfo(libfuse::fuse_file_info);
@@ -106,16 +198,21 @@ type ReaddirHook = fn(
     offset: libfuse::off_t,
     fuse_file_info_out: *mut libfuse::fuse_file_info,
     readdir_flags: libfuse::fuse_readdir_flags,
-);
+) -> i32;
 
 pub struct GetfattrRetVal {
     pub stat: Stat,
     pub fuse_file_info: FuseFileInfo,
 }
 
+pub struct ReaddirRetVal {
+    pub entries: Vec<String>,
+    pub fuse_file_info: FuseFileInfo,
+}
+
 pub trait Filesystem: Send + Sync + 'static {
     fn getattr(&self, path: &Path) -> Result<GetfattrRetVal, Errno>;
-    fn readdir(&self);
+    fn readdir(&self) -> Result<ReaddirRetVal, Errno>;
     fn open(&self);
     fn read(&self);
 }
@@ -165,62 +262,18 @@ pub unsafe extern "C" fn getattr<FS: Filesystem>(
     ensure_errno!(stat_out.is_aligned(), Errno::EINVAL);
     ensure_errno!(fuse_file_info_out.is_aligned(), Errno::EINVAL);
 
-    let fs_handle = match state::get::<FS>() {
-        Ok(handle) => handle,
-        Err(e) => bail_errno!(
-            format!(
-                "State lookup for `{}` failed. Registry corrupted? ({e:#})",
-                std::any::type_name::<FS>()
-            ),
-            Errno::ENOTRECOVERABLE
-        ),
-        // TODO can I log? maybe requrire `log()` interface for FS trait
-    };
+    let fs = try_errno!(fetch_fs_from_registry::<FS>());
 
     // THESIS https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html
     // safe wrapping of params
     // SAFETY: we check invariants at the function start
-    let path = unsafe { CStr::from_ptr(path) };
-    let path_utf8: &str = match path.to_str() {
-        Ok(path) => path,
-        Err(utf8_error) => {
-            bail_errno!(
-                format!("path is not valid UTF-8: {utf8_error:#}"),
-                Errno::EINVAL
-            );
-        }
-    };
-    let path_utf8 = Path::new(path_utf8);
+    let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
-    //let result = match call_with_catch_unwind(|| fs_handle.getattr(path_utf8), "getfattr"){
-    let result = match std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
-        fs_handle.getattr(path_utf8)
-    })) {
-        Ok(user_result) => user_result,
-        Err(panic) => {
-            // abort, since internal state of filesystem impl can now be inconsistent
-            state::clear();
-            bail_errno!(
-                format!(
-                    "PANIC on `{fs}::{method}`:\n\n{panic:?}\n",
-                    fs = std::any::type_name::<FS>(),
-                    method = "getattr"
-                ),
-                Errno::ENOTRECOVERABLE
-            )
-        }
-    };
-
+    let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.getattr(&path)));
     let GetfattrRetVal {
         stat,
         fuse_file_info,
-    } = match result {
-        Ok(val) => val,
-        Err(user_error) => bail_errno!(
-            format!("Error in user code: {:#}", user_error.desc()),
-            user_error
-        ),
-    };
+    } = result;
 
     // SAFETY: we assume that the two outptrs received by libfuse are not dangling. We can check for alignment and
     // non-null-ity, but invalid memory addresses will not be catched.
@@ -234,21 +287,88 @@ pub unsafe extern "C" fn getattr<FS: Filesystem>(
 }
 
 //pub unsafe extern "C" fn readdir<FS: Filesystem>() {}
-static readdir: ReaddirHook = |path, buf, filler_fn, _offset, fuse_file_info_out, readdir_flags| {};
+static readdir: ReaddirHook = |path, buf, filler_fn, _offset, fuse_file_info_out, readdir_flags| {
+    let Some(filler_fn) = filler_fn else {
+        bail_errno!("`filler_fn` must not be null", Errno::EINVAL);
+    };
 
-pub fn rust_string_from_c_ptr(c_str: *const c_char) -> &Path {
+    ensure_errno!(!path.is_null(), Errno::EINVAL);
+    ensure_errno!(!buf.is_null(), Errno::EINVAL);
+    ensure_errno!(!fuse_file_info_out.is_null(), Errno::EINVAL);
+    ensure_errno!(path.is_aligned(), Errno::EINVAL);
+    ensure_errno!(buf.is_aligned(), Errno::EINVAL);
+    ensure_errno!(fuse_file_info_out.is_aligned(), Errno::EINVAL);
+
+    let fs = try_errno!(fetch_fs_from_registry::<FS>());
+
+    // SAFETY: we check invariants at the function start
+    let path = try_errno!(unsafe { path_from_c_ptr(path) });
+
+    let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.getattr(&path)));
+    let ReaddirRetVal {
+        entries,
+        fuse_file_info,
+    } = result;
+
+    for entry in entries {
+        unsafe {
+            todo!("filler_fn()");
+        }
+    }
+
+    todo!()
+};
+
+fn fetch_fs_from_registry<FS: Filesystem>() -> Result<Arc<FS>, (String, Errno)> {
+    state::get::<FS>().map_err(|e| {
+        (
+            format!(
+                "State lookup for `{}` failed. Registry corrupted? ({e:#})",
+                std::any::type_name::<FS>()
+            ),
+            Errno::ENOTRECOVERABLE,
+        )
+    })
+}
+
+fn call_into_user_code<FS: Filesystem, T>(
+    method: &str,
+    user_fn: impl FnOnce() -> Result<T, Errno>,
+) -> Result<T, (String, Errno)> {
+    let fs = std::any::type_name::<FS>();
+    std::panic::catch_unwind(core::panic::AssertUnwindSafe(user_fn))
+        .map_err(|panic| {
+            // abort, since internal state of filesystem impl can now be inconsistent
+            state::clear();
+            (
+                format!("PANIC on `{fs}::{method}`:\n\n{panic:?}\n"),
+                Errno::ENOTRECOVERABLE,
+            )
+        })
+        .and_then(|inner| inner.map_err(|e| (format!("Error in user code `{fs}::{method}`"), e)))
+}
+
+/// # Safety
+///
+/// - `c_str` - is a valid pointer (non-dangling, aligned), is nul-terminated
+///
+/// Since we copy the string instead of referencing it, aliasing and mutation of the original c string
+/// are not as important.
+unsafe fn path_from_c_ptr(c_str: *const c_char) -> Result<PathBuf, (String, Errno)> {
     let path = unsafe { CStr::from_ptr(c_str) };
     let path_utf8: &str = match path.to_str() {
         Ok(path) => path,
         Err(utf8_error) => {
-            bail_errno!(
+            return Err((
                 format!("path is not valid UTF-8: {utf8_error:#}"),
-                Errno::EINVAL
-            );
+                Errno::EINVAL,
+            ));
         }
     };
-    let path_utf8 = Path::new(path_utf8);
-    path_utf8
+
+    // TODO (maybe) copy path because what lifetime should this &Path have? we can't depend it on a ptr.
+    let path_utf8 = PathBuf::from(path_utf8);
+    Ok(path_utf8)
 }
 
 /*fn call_with_catch_unwind<FS: Filesystem, T>(
