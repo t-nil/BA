@@ -13,7 +13,7 @@ macro_rules! p {
 }
 
 fn main() {
-    // Tell cargo to look for shared libraries in the specified directory
+    // Tell cargo to tell rustc to look for shared libraries in the specified directory
     println!("cargo:rustc-link-search={LIBFUSE_DIR}");
 
     // Tell cargo to tell rustc to link the system FUSE
@@ -27,6 +27,8 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("headers/fuse.h")
+        // generate wrappers for `static inline` functions like `fuse_main_fn()`
+        .wrap_static_fns(true)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

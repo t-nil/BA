@@ -1,15 +1,17 @@
-//! - nix::Error seems to wrapp errno compatibly
-//! - FUSE callbacks seem to return `-errno` (https://libfuse.github.io/doxygen/structfuse__operations.html#Detailed%20Description)
+//! ### Insights
 //!
-//! - big questions:
-//!   - transparent "type checker"-only wrappers, or add one level of indirection?
-//!   - how to store global data/how to give raw c callbacks access to the Filesystem impl'ing struct? `singleton-registry`?
+//! - `nix::Error` seems to wrapp errno compatibly
+//! - FUSE callbacks seem to return `-errno` (<https://libfuse.github.io/doxygen/structfuse__operations.html#Detailed%20Description>)
 //!
-//! - big interesting todos:
-//!   - make c-compatible (i32) wrapper for Result<(), Errno>
-//!     - either newtype struct that maintains ABI compatibility to C i32, or return i32 and overload `Try` operator
-//!     - ADVANTAGE: could get rid of the big macro blocks (and the problem for nesting with these blocks adding at every layer)
-//!   - find out how to apply sanitizers (especially if we apply them to both libfuse and our crate, linker params etc.)
+//! ### big questions
+//! - transparent "type checker"-only wrappers, or add one level of indirection?
+//! - how to store global data/how to give raw c callbacks access to the Filesystem impl'ing struct? `singleton-registry`?
+//!
+//! ### big interesting todos
+//! - make c-compatible (i32) wrapper for Result<(), Errno>
+//!   - either newtype struct that maintains ABI compatibility to C i32, or return i32 and overload `Try` operator
+//!   - ADVANTAGE: could get rid of the big macro blocks (and the problem for nesting with these blocks adding at every layer)
+//! - find out how to apply sanitizers (especially if we apply them to both libfuse and our crate, linker params etc.)
 //!
 //!
 //! # Tags
@@ -19,23 +21,36 @@
 //! - OUTLOOK
 //! - INVALID
 
+#![warn(clippy::pedantic)]
+
 use std::{
-    ffi::{CStr, CString, c_char, c_void},
+    ffi::{CStr, CString, c_char, c_int, c_void},
+    fmt,
+    mem::ManuallyDrop,
+    ops::Range,
     path::{Path, PathBuf},
     ptr,
     sync::Arc,
 };
 
 use color_eyre::{
-    Result,
+    Report, Result,
     eyre::{Context, bail},
 };
-use derive_more::{Deref, Into};
-use nix::{Error as Errno, libc::size_t};
+use derive_builder::Builder;
+use derive_more::{Deref, Display, Into};
+use itertools::Itertools as _;
+use nix::Error as Errno;
 use singleton_registry::define_registry;
-use tracing::error;
+use thiserror::Error;
+use tracing::{debug, error};
+use typed_builder::TypedBuilder;
 
+#[allow(clippy::all)]
+#[allow(clippy::pedantic)]
 mod libfuse;
+
+type FileModeRepr = u32;
 
 macro_rules! ensure_errno {
     ($test:expr, $errno:expr) => {{
@@ -101,34 +116,25 @@ define_registry!(state);
 //     }
 // }
 
-// TODO: builder pattern
-#[derive(Into, Deref)]
-pub struct Stat(libfuse::stat);
-
-/// See https://libfuse.github.io/doxygen/example_2hello_8c.html for minimal set of values.
+/// See <https://libfuse.github.io/doxygen/example_2hello_8c.html> for minimal set of values.
 ///
-/// Refer to https://www.man7.org/linux/man-pages/man0/sys_stat.h.0p.html for infos about the underlying values.
-impl Stat {}
-
+/// Refer to <https://www.man7.org/linux/man-pages/man0/sys_stat.h.0p.html> for infos about the underlying values.
+///
+// TODO: builder pattern
+#[derive(Debug, Clone, Copy, Into, Deref)]
+pub struct Stat(libfuse::stat);
 impl Stat {
-    pub unsafe fn new_unsafe(stat: libfuse::stat) -> Self {
-        // assert!(is_valid(stat));
+    #[must_use]
+    pub unsafe fn new_unchecked(stat: libfuse::stat) -> Self {
+        // debug_assert!(is_valid(stat));
         Self(stat)
     }
     /// `mode` - bitmask for the typical modes/permission under *nix (ugw, director etc)
-    pub fn new_file(mode: StatMode, mode_rest: u32, n_link: u64, size: i64) -> Result<Self> {
+    pub fn new_simple(mode: FileMode, n_link: u64, size: i64) -> Result<Self> {
         Ok(Self(libfuse::stat {
             st_nlink: n_link,
             st_size: size,
-            st_mode: match mode {
-                StatMode::BlockDevice => libfuse::S_IFBLK,
-                StatMode::CharacterDevice => libfuse::S_IFCHR,
-                StatMode::Fifo => libfuse::S_IFIFO,
-                StatMode::RegularFile => libfuse::S_IFREG,
-                StatMode::Directory => libfuse::S_IFDIR,
-                StatMode::SymbolicLink => libfuse::S_IFLNK,
-                StatMode::Socket => libfuse::S_IFSOCK,
-            } + mode_rest, // TODO (important) provide API for flags
+            st_mode: mode.0, // TODO (important) provide API for flags
             st_dev: 0,
             st_ino: 0,
             st_uid: 0,
@@ -154,65 +160,162 @@ impl Stat {
         }))
     }
 
+    #[must_use]
     pub fn inner(&self) -> &libfuse::stat {
         &self.0
     }
 }
 
 // TODO encode bitflag values, and provide test functions (https://www.man7.org/linux/man-pages/man0/sys_stat.h.0p.html)
-enum StatMode {
-    BlockDevice,
-    CharacterDevice,
-    Fifo,
-    RegularFile,
-    Directory,
-    SymbolicLink,
-    Socket,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum FileType {
+    BlockDevice = libfuse::S_IFBLK,
+    CharacterDevice = libfuse::S_IFCHR,
+    Fifo = libfuse::S_IFIFO,
+    RegularFile = libfuse::S_IFREG,
+    Directory = libfuse::S_IFDIR,
+    SymbolicLink = libfuse::S_IFLNK,
+    Socket = libfuse::S_IFSOCK,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileMode(FileModeRepr);
+
+#[derive(Debug, Builder)]
+pub struct RuntimeModeBuilder {
+    file_type: FileType,
+
+    permissions: FilePermissions,
+
+    #[builder(default = false)]
+    setuid: bool,
+    #[builder(default = false)]
+    setgid: bool,
+    #[builder(default = false)]
+    vtx_flag: bool,
+}
+
+#[derive(TypedBuilder)]
+#[builder(build_method(into = FileMode))]
+pub struct TypedModeBuilder {
+    file_type: FileType,
+
+    //#[builder(setter(transform = |x: FilePermissions| x.0 ))]
+    permissions: FilePermissions,
+
+    // `default = false` is implied by fallbac
+    #[builder(setter(strip_bool(fallback = toggle_setuid)))]
+    setuid: bool,
+    #[builder(setter(strip_bool(fallback = toggle_setgid)))]
+    setgid: bool,
+    #[builder(setter(strip_bool(fallback = toggle_vtx)))]
+    vtx_flag: bool,
+}
+
+#[derive(Debug, Clone, Display, Copy, Into, Deref)]
+pub struct FilePermissions(u16);
+
+impl FilePermissions {
+    pub fn new(value: u16) -> Result<Self, OutOfRangeError<u16>> {
+        if value > 0o777 {
+            return Err(OutOfRangeError {
+                range: 0..0o777,
+                value,
+            });
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Argument out of range: '{value}'. Must be between '{}' and '{}'", range.start, range.end)]
+pub struct OutOfRangeError<T: fmt::Display> {
+    range: Range<T>,
+    value: T,
+}
+
+impl From<TypedModeBuilder> for FileMode {
+    fn from(
+        TypedModeBuilder {
+            file_type,
+            permissions,
+            setuid,
+            setgid,
+            vtx_flag,
+        }: TypedModeBuilder,
+    ) -> Self {
+        Self(
+            file_type as u32
+                + permissions.0 as u32
+                + if setuid { libfuse::S_ISUID } else { 0 }
+                + if setgid { libfuse::S_ISGID } else { 0 }
+                + if vtx_flag { libfuse::S_ISVTX } else { 0 },
+        )
+    }
+}
+
+impl From<RuntimeModeBuilder> for FileMode {
+    fn from(
+        RuntimeModeBuilder {
+            file_type,
+            permissions,
+            setuid,
+            setgid,
+            vtx_flag,
+        }: RuntimeModeBuilder,
+    ) -> Self {
+        Self(
+            file_type as u32
+                + permissions.0 as u32
+                + if setuid { libfuse::S_ISUID } else { 0 }
+                + if setgid { libfuse::S_ISGID } else { 0 }
+                + if vtx_flag { libfuse::S_ISVTX } else { 0 },
+        )
+    }
 }
 
 pub struct FuseFileInfo(libfuse::fuse_file_info);
 
-type GetattrHook = fn(
-    path: *const i8,
-    stat_out: *mut libfuse::stat,
-    fuse_file_info_out: *mut libfuse::fuse_file_info,
-) -> i32;
-type OpenHook = fn(path: *const c_char, fuse_file_info_out: *mut libfuse::fuse_file_info) -> i32;
-type ReadHook = fn(
-    path: *const c_char,
-    buf_out: *mut c_char,
-    n: size_t,
-    offset: libfuse::off_t,
-    fuse_file_info_out: *mut libfuse::fuse_file_info,
-) -> i32;
+// type GetattrHook = fn(
+//     path: *const i8,
+//     stat_out: *mut libfuse::stat,
+//     fuse_file_info_out: *mut libfuse::fuse_file_info,
+// ) -> i32;
+// type OpenHook = fn(path: *const c_char, fuse_file_info_out: *mut libfuse::fuse_file_info) -> i32;
+// type ReadHook = fn(
+//     path: *const c_char,
+//     buf_out: *mut c_char,
+//     n: size_t,
+//     offset: libfuse::off_t,
+//     fuse_file_info_out: *mut libfuse::fuse_file_info,
+// ) -> i32;
 
-///
-///
-/// * `buf` - (buffer to pass to filler fn?? TODO)
-/// * `filler_fn` - function to call once per directory entry? TODO
-/// * `offset` - should be ignorable since we only support complete dir listing in one go? TODO
-type ReaddirHook = fn(
-    path: *const c_char,
-    data_ptr: *mut c_void,
-    filler_fn: libfuse::fuse_fill_dir_t,
-    offset: libfuse::off_t,
-    fuse_file_info_out: *mut libfuse::fuse_file_info,
-    readdir_flags: libfuse::fuse_readdir_flags,
-) -> i32;
+// ///
+// ///
+// type ReaddirHook = fn(
+//     path: *const c_char,
+//     data_ptr: *mut c_void,
+//     filler_fn: libfuse::fuse_fill_dir_t,
+//     offset: libfuse::off_t,
+//     fuse_file_info_out: *mut libfuse::fuse_file_info,
+//     readdir_flags: libfuse::fuse_readdir_flags,
+// ) -> i32;
 
 pub struct GetfattrRetVal {
     pub stat: Stat,
-    pub fuse_file_info: FuseFileInfo,
 }
 
+// TODO (maybe) use Cow and <T: AsRef<str>> params to let user choose wether to pass owned Strings or references.
 pub struct ReaddirRetVal {
     pub entries: Vec<String>,
-    pub fuse_file_info: FuseFileInfo,
+    // seems to only be set from `open`, `opendir`, `create` - https://libfuse.github.io/doxygen/structfuse__file__info.html#afcff4109f1c8fb7ff51f18500496271d
+    //pub fuse_file_info: Option<FuseFileInfo>,
 }
 
 pub trait Filesystem: Send + Sync + 'static {
     fn getattr(&self, path: &Path) -> Result<GetfattrRetVal, Errno>;
-    fn readdir(&self) -> Result<ReaddirRetVal, Errno>;
+    fn readdir(&self, path: &Path) -> Result<ReaddirRetVal, Errno>;
     fn open(&self);
     fn read(&self);
 }
@@ -252,15 +355,15 @@ impl<FS: Filesystem> FSImplForC<FS> {
 pub unsafe extern "C" fn getattr<FS: Filesystem>(
     path: *const i8,
     stat_out: *mut libfuse::stat,
-    fuse_file_info_out: *mut libfuse::fuse_file_info,
+    _fuse_file_info_out: *mut libfuse::fuse_file_info,
 ) -> i32 {
     // Safety
     ensure_errno!(!path.is_null(), Errno::EINVAL);
     ensure_errno!(!stat_out.is_null(), Errno::EINVAL);
-    ensure_errno!(!fuse_file_info_out.is_null(), Errno::EINVAL);
+    //   ensure_errno!(!_fuse_file_info_out.is_null(), Errno::EINVAL);
     ensure_errno!(path.is_aligned(), Errno::EINVAL);
     ensure_errno!(stat_out.is_aligned(), Errno::EINVAL);
-    ensure_errno!(fuse_file_info_out.is_aligned(), Errno::EINVAL);
+    //    ensure_errno!(_fuse_file_info_out.is_aligned(), Errno::EINVAL);
 
     let fs = try_errno!(fetch_fs_from_registry::<FS>());
 
@@ -270,54 +373,80 @@ pub unsafe extern "C" fn getattr<FS: Filesystem>(
     let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
     let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.getattr(&path)));
-    let GetfattrRetVal {
-        stat,
-        fuse_file_info,
-    } = result;
+    let GetfattrRetVal { stat } = result;
 
     // SAFETY: we assume that the two outptrs received by libfuse are not dangling. We can check for alignment and
     // non-null-ity, but invalid memory addresses will not be catched.
     unsafe {
         *stat_out = *stat;
-        *fuse_file_info_out = fuse_file_info.0;
         todo!("safety")
     }
 
     return 0;
 }
 
-//pub unsafe extern "C" fn readdir<FS: Filesystem>() {}
-static readdir: ReaddirHook = |path, buf, filler_fn, _offset, fuse_file_info_out, readdir_flags| {
+/// * `buf` - (buffer to pass to filler fn?? TODO)
+/// * `filler_fn` - function to call once per directory entry? TODO
+/// * `offset` - should be ignorable since we only support complete dir listing in one go? TODO
+#[tracing::instrument]
+pub unsafe extern "C" fn readdir<FS: Filesystem>(
+    path: *const c_char,
+    data_ptr: *mut c_void,
+    filler_fn: libfuse::fuse_fill_dir_t,
+    _offset: libfuse::off_t,
+    fuse_file_info_out: *mut libfuse::fuse_file_info,
+    _readdir_flags: libfuse::fuse_readdir_flags,
+) -> i32 {
     let Some(filler_fn) = filler_fn else {
         bail_errno!("`filler_fn` must not be null", Errno::EINVAL);
     };
 
     ensure_errno!(!path.is_null(), Errno::EINVAL);
-    ensure_errno!(!buf.is_null(), Errno::EINVAL);
     ensure_errno!(!fuse_file_info_out.is_null(), Errno::EINVAL);
     ensure_errno!(path.is_aligned(), Errno::EINVAL);
-    ensure_errno!(buf.is_aligned(), Errno::EINVAL);
     ensure_errno!(fuse_file_info_out.is_aligned(), Errno::EINVAL);
+
+    // since we don't use `data_ptr` besides passing it to `filler_fn`, we can ignore invariants.
+    //ensure_errno!(data_ptr.is_aligned(), Errno::EINVAL);
+    //ensure_errno!(!data_ptr.is_null(), Errno::EINVAL);
 
     let fs = try_errno!(fetch_fs_from_registry::<FS>());
 
     // SAFETY: we check invariants at the function start
     let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
-    let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.getattr(&path)));
-    let ReaddirRetVal {
-        entries,
-        fuse_file_info,
-    } = result;
+    let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.readdir(&path)));
+    let ReaddirRetVal { entries } = result;
 
     for entry in entries {
-        unsafe {
-            todo!("filler_fn()");
+        let entry_as_c_string = try_errno!(CString::new(entry.clone()).map_err(|e| {
+            (
+                format!("converting dir entry '{entry}' into a C string: {e:#}"),
+                Errno::EIO,
+            )
+        }));
+        debug!(?path, "filling entry '{entry}'");
+        let fill_result = unsafe {
+            filler_fn(
+                data_ptr,
+                entry_as_c_string.as_ptr(),
+                ptr::null(), /* setting `stat` struct to NULL, as per `hello.c` */
+                0,           /*: offset */
+                // …_PLUS => let kernel fill inode cache by announcing that the stat param is fully set
+                libfuse::fuse_fill_dir_flags_FUSE_FILL_DIR_DEFAULTS,
+            )
+        };
+
+        if fill_result != 0 {
+            bail_errno!(
+                format!("filler_fn returned non-zero for '{entry}': {fill_result}"),
+                Errno::EIO
+            );
         }
     }
 
     todo!()
-};
+}
 
 fn fetch_fs_from_registry<FS: Filesystem>() -> Result<Arc<FS>, (String, Errno)> {
     state::get::<FS>().map_err(|e| {
@@ -393,13 +522,23 @@ unsafe fn path_from_c_ptr(c_str: *const c_char) -> Result<PathBuf, (String, Errn
 
 pub struct FuseHandle(i32);
 
-pub fn fuse_init<FS: Filesystem>(fs: FS, mount_point: impl AsRef<Path>) -> Result<FuseHandle> {
+pub fn fuse_main<FS: Filesystem>(
+    fs: FS,
+    mount_point: impl AsRef<Path>,
+    args: impl Iterator<Item = impl AsRef<str>>,
+) -> Result<FuseHandle> {
     let Some(mount_point) = mount_point.as_ref().to_str() else {
         bail!(
             "mount point '{}' is not valid UTF-8",
             mount_point.as_ref().to_string_lossy()
         )
     };
+
+    let mut args = obtain_argv_as_mut_array(args)
+        .wrap_err("converting `env::args()` to a mutable C string array `(*mut *mut c_char)`")?;
+    //let arg_ptrs = args.iter().map(|c_str| c_str.as_mut()).collect_vec();
+
+    //let (argc, argv): (c_int, *mut *mut c_char) = { (args.len() as c_int, nix::libc::mall) };
 
     let mount_point_c_str = CString::new(mount_point)
         .wrap_err_with(|| format!("mount point '{mount_point}' is not a valid CString"))?;
@@ -411,7 +550,7 @@ pub fn fuse_init<FS: Filesystem>(fs: FS, mount_point: impl AsRef<Path>) -> Resul
         getattr: Some(getattr::<FS>),
         open: todo!(),
         read: todo!(),
-        readdir: todo!(),
+        readdir: Some(readdir::<FS>),
 
         // rest
         readlink: None,
@@ -454,12 +593,81 @@ pub fn fuse_init<FS: Filesystem>(fs: FS, mount_point: impl AsRef<Path>) -> Resul
         lseek: None,
     };
 
-    let fuse = unsafe {
-        libfuse::fuse_fs_new(&fuse_ops, std::mem::size_of_val(&fuse_ops), ptr::null_mut())
-    };
+    unsafe {
+        // fuse_main_fn(argc: ::std::os::raw::c_int, argv: *mut *mut ::std::os::raw::c_char,
+        //              op: *const fuse_operations, user_data: *mut ::std::os::raw::c_void) -> ::std::os::raw::c_int
+        let errno = libfuse::fuse_main_fn(
+            args.len()
+                .try_into()
+                .unwrap_or_else(|_| panic!("more than {} args are not supported", i32::MAX)),
+            args.as_mut_ptr(),
+            &fuse_ops as *const libfuse::fuse_operations,
+            ptr::null_mut(),
+        );
+        if errno != 0 {
+            bail!("`libfuse::fuse_main_fn()` returned non-zero status ({errno})");
+        }
+    }
+
+    // let _fuse_args = libfuse::fuse_args {
+    //     argc: todo!(),
+    //     argv: todo!(),
+    //     allocated: todo!(),
+    // };
+
+    // let _fuse_fs = unsafe {
+    //     libfuse::fuse_fs_new(&fuse_ops, std::mem::size_of_val(&fuse_ops), ptr::null_mut())
+    // };
+    //let fuse = unsafe { libfuse::_fuse_new_31(args, op, op_size, version, user_data) };
 
     // SAFETY: use mut_ptr() to not trust the c code to not mutate?
-    let fuse_handle = unsafe { libfuse::fuse_mount(todo!(), mount_point_c_str.as_ptr()) };
+    //let fuse_handle = unsafe { libfuse::fuse_mount(fuse_fs, mount_point_c_str.as_ptr()) };
 
-    Ok(FuseHandle(fuse_handle))
+    Ok(FuseHandle(todo!("fuse_handle")))
+}
+
+fn obtain_argv_as_mut_array(
+    args: impl Iterator<Item = impl AsRef<str>>,
+) -> Result<ManuallyDrop<Box<[*mut c_char]>>> {
+    let c_string_vec = args
+        .map(|s| {
+            let s = s.as_ref();
+            CString::new(s)
+                .map_err(Report::new)
+                .wrap_err_with(|| format!("Parsing arg '{s}'"))
+        })
+        .collect::<Result<Vec<_>>>()
+        .wrap_err("converting args to CStrings")?;
+
+    // we leak this memory, usually this should only be called once and leaking S(args) should not be considered relevant.
+    // On the other hand, this way C code can do almost anything to this data and we won't UB.
+    let ptr_vec = c_string_vec
+        .into_iter()
+        .map(|cstr| cstr.into_raw())
+        .collect_vec();
+
+    Ok(ManuallyDrop::new(ptr_vec.into_boxed_slice()))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(non_snake_case)]
+    use super::*;
+
+    #[test]
+    fn FileMode() {
+        assert_eq!(
+            TypedModeBuilder::builder()
+                .file_type(FileType::RegularFile)
+                .permissions(FilePermissions::new(0o775).unwrap())
+                .setuid()
+                .build()
+                .0,
+            libfuse::S_IFREG
+                + libfuse::S_IRWXU
+                + libfuse::S_IRWXG
+                + libfuse::S_IROTH
+                + libfuse::S_IXOTH
+        )
+    }
 }

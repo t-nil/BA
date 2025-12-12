@@ -1,7 +1,16 @@
 use std::{env::args, path::Path};
 
-use color_eyre::Result;
-use rust_bindgen_fuse::{Filesystem, GetfattrRetVal, Stat};
+use color_eyre::{Result, eyre::bail};
+use itertools::Itertools as _;
+use nix::errno::Errno;
+use rust_bindgen_fuse::{
+    FilePermissions, FileType, Filesystem, GetfattrRetVal, ReaddirRetVal, Stat, TypedModeBuilder,
+};
+use tracing::Level;
+use tracing_subscriber::EnvFilter;
+
+const HELLO_CONTENT: &str = "Hello world!\n";
+const FILES: [&str; 1] = ["hello.txt"];
 
 pub struct HelloFS;
 
@@ -9,30 +18,29 @@ impl Filesystem for HelloFS {
     fn getattr(&self, path: &Path) -> Result<GetfattrRetVal, nix::Error> {
         if path == "/hello.txt" {
             Ok(GetfattrRetVal {
-                stat: Stat(stat {
-                    st_dev: (),
-                    st_ino: (),
-                    st_nlink: (),
-                    st_mode: (),
-                    st_uid: (),
-                    st_gid: (),
-                    __pad0: (),
-                    st_rdev: (),
-                    st_size: (),
-                    st_blksize: (),
-                    st_blocks: (),
-                    st_atim: (),
-                    st_mtim: (),
-                    st_ctim: (),
-                    __glibc_reserved: (),
-                }),
-                fuse_file_info: (),
+                stat: Stat::new_simple(
+                    TypedModeBuilder::builder()
+                        .file_type(FileType::RegularFile)
+                        .permissions(FilePermissions::new(0o444).unwrap())
+                        .build(),
+                    1,
+                    HELLO_CONTENT.len() as i64,
+                )
+                .unwrap(),
             })
+        } else {
+            Err(Errno::ENOENT)
         }
     }
 
     fn readdir(&self, path: &Path) -> Result<ReaddirRetVal, nix::Error> {
-        todo!()
+        if path == "/" {
+            Ok(ReaddirRetVal {
+                entries: FILES.into_iter().map(|s| s.to_owned()).collect_vec(),
+            })
+        } else {
+            Err(Errno::ENOENT)
+        }
     }
 
     fn open(&self) {
@@ -45,10 +53,22 @@ impl Filesystem for HelloFS {
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(Level::INFO.into())
+                .from_env()?,
+        )
+        .init();
+
     let args: Vec<_> = args().collect();
     let [_, mount_point] = args.as_slice() else {
         eprintln!("Usage: hello `mount_point`");
+        bail!("invalid args")
     };
 
-    let fuse = rust_bindgen_fuse::fuse_init(fs, mount_point)?;
+    let fs = HelloFS;
+
+    let _fuse = rust_bindgen_fuse::fuse_main(fs, mount_point, std::env::args())?;
+    Ok(())
 }
