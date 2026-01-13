@@ -6,6 +6,10 @@
 //! ### big questions
 //! - transparent "type checker"-only wrappers, or add one level of indirection?
 //! - how to store global data/how to give raw c callbacks access to the Filesystem impl'ing struct? `singleton-registry`?
+//! - make everything (even my code) panic-safe by wrapping in catch_unwind preemtively? maybe with macros?
+//!   - https://github.com/dtolnay/no-panic
+//! - rethink error reporting TODO
+//! - **check `as` rules**
 //!
 //! ### big interesting todos
 //! - make c-compatible (i32) wrapper for Result<(), Errno>
@@ -20,6 +24,9 @@
 //! - MAYBE
 //! - OUTLOOK
 //! - INVALID
+//!
+
+// TODO (quick) replace `&Path` with `&str` since we enforce unicode anyways
 
 #![warn(clippy::pedantic)]
 
@@ -40,11 +47,13 @@ use color_eyre::{
 use derive_builder::Builder;
 use derive_more::{Deref, Display, Into};
 use itertools::Itertools as _;
-use nix::Error as Errno;
+use nix::{Error as Errno, libc};
 use singleton_registry::define_registry;
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, info, instrument};
 use typed_builder::TypedBuilder;
+
+static DEBUG: bool = matches!(option_env!("DEBUG"), Some(_));
 
 #[allow(clippy::all)]
 #[allow(clippy::pedantic)]
@@ -65,7 +74,7 @@ macro_rules! bail_errno {
     ($error_str:expr, $errno:expr) => {{
         let error_str = $error_str;
         let errno = $errno;
-        error!(
+        eprintln!(
             // debug fmt errno for Err(Errno) case (wouldn't implement Display)
             "{}:{}: {}. (Returning {:?} - {})",
             file!(),
@@ -86,6 +95,14 @@ macro_rules! try_errno {
             Err((e, errno)) => bail_errno!(e, errno),
         }
     }};
+}
+
+macro_rules! bitflag_accessor {
+    ($inner_type:ty, $name:ident, $val:path) => {
+        fn $name(&self) -> bool {
+            self.0 & $val as $inner_type != 0
+        }
+    };
 }
 
 define_registry!(state);
@@ -277,6 +294,27 @@ impl From<RuntimeModeBuilder> for FileMode {
 
 pub struct FuseFileInfo(libfuse::fuse_file_info);
 
+pub struct OpenFlags(i32);
+
+impl OpenFlags {
+    bitflag_accessor!(i32, append, OpenFlag::Append);
+    bitflag_accessor!(i32, readonly, OpenFlag::Readonly);
+    bitflag_accessor!(i32, writeonly, OpenFlag::Writeonly);
+    bitflag_accessor!(i32, read_plus_write, OpenFlag::ReadPlusWrite);
+    bitflag_accessor!(i32, truncate, OpenFlag::Truncate);
+}
+
+/// This is repr(i32) because the target bitset (fuse_file_info::flags) and the `libc` constants are also i32.
+#[repr(i32)]
+enum OpenFlag {
+    Append = libc::O_APPEND,
+    Readonly = libc::O_RDONLY,
+    Writeonly = libc::O_WRONLY,
+    ReadPlusWrite = libc::O_RDWR,
+    Truncate = libc::O_TRUNC,
+    // TODO (maybe) exhaust
+}
+
 // type GetattrHook = fn(
 //     path: *const i8,
 //     stat_out: *mut libfuse::stat,
@@ -313,11 +351,19 @@ pub struct ReaddirRetVal {
     //pub fuse_file_info: Option<FuseFileInfo>,
 }
 
+pub struct OpenRetVal {
+    pub fuse_file_info: Option<FuseFileInfo>,
+}
+
+pub struct ReadRetVal {
+    pub content: Vec<u8>,
+}
+
 pub trait Filesystem: Send + Sync + 'static {
     fn getattr(&self, path: &Path) -> Result<GetfattrRetVal, Errno>;
     fn readdir(&self, path: &Path) -> Result<ReaddirRetVal, Errno>;
-    fn open(&self);
-    fn read(&self);
+    fn open(&self, path: &Path, flags: OpenFlags) -> Result<OpenRetVal, Errno>;
+    fn read(&self, path: &Path, size: u32, offset: isize) -> Result<ReadRetVal, Errno>;
 }
 
 /*unsafe extern "C" {
@@ -372,14 +418,15 @@ pub unsafe extern "C" fn getattr<FS: Filesystem>(
     // SAFETY: we check invariants at the function start
     let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
+    debug!("enter: getfattr('{}')", path.to_string_lossy());
     let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.getattr(&path)));
     let GetfattrRetVal { stat } = result;
+    debug!("return: getfattr => {}", path.to_string_lossy());
 
     // SAFETY: we assume that the two outptrs received by libfuse are not dangling. We can check for alignment and
     // non-null-ity, but invalid memory addresses will not be catched.
     unsafe {
         *stat_out = *stat;
-        todo!("safety")
     }
 
     return 0;
@@ -415,8 +462,10 @@ pub unsafe extern "C" fn readdir<FS: Filesystem>(
     // SAFETY: we check invariants at the function start
     let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
-    let result = try_errno!(call_into_user_code::<FS, _>("getfattr", || fs.readdir(&path)));
+    debug!("enter: readdir('{}')", path.to_string_lossy());
+    let result = try_errno!(call_into_user_code::<FS, _>("readdir", || fs.readdir(&path)));
     let ReaddirRetVal { entries } = result;
+    debug!("return: readdir => {entries:?}");
 
     for entry in entries {
         let entry_as_c_string = try_errno!(CString::new(entry.clone()).map_err(|e| {
@@ -445,7 +494,113 @@ pub unsafe extern "C" fn readdir<FS: Filesystem>(
         }
     }
 
-    todo!()
+    return 0;
+}
+
+/// FUSE docs:
+///
+/// ```quote
+///
+/// Open a file
+///
+/// Open flags are available in fi->flags. The following rules apply.
+///
+/// - Creation (O_CREAT, O_EXCL, O_NOCTTY) flags will be filtered out / handled by the kernel.
+/// - Access modes (O_RDONLY, O_WRONLY, O_RDWR, O_EXEC, O_SEARCH) should be used by the filesystem to check if the operation is permitted. If the -o default_permissions mount option is given, this check is already done by the kernel before calling open() and may thus be omitted by the filesystem.
+/// - When writeback caching is enabled, the kernel may send read requests even for files opened with O_WRONLY. The filesystem should be prepared to handle this.
+/// - When writeback caching is disabled, the filesystem is expected to properly handle the O_APPEND flag and ensure that each write is appending to the end of the file.
+/// - When writeback caching is enabled, the kernel will handle O_APPEND. However, unless all changes to the file come through the kernel this will not work reliably. The filesystem should thus either ignore the O_APPEND flag (and let the kernel handle it), or return an error (indicating that reliably O_APPEND is not available).
+///
+/// Filesystem may store an arbitrary file handle (pointer, index, etc) in fi->fh, and use this in other all other file operations (read, write, flush, release, fsync).
+///
+/// Filesystem may also implement stateless file I/O and not store anything in fi->fh.
+///
+/// There are also some flags (direct_io, keep_cache) which the filesystem may set in fi, to change the way the file is opened. See fuse_file_info structure in <fuse_common.h> for more details.
+///
+/// If this request is answered with an error code of ENOSYS and FUSE_CAP_NO_OPEN_SUPPORT is set in fuse_conn_info.capable, this is treated as success and future calls to open will also succeed without being sent to the filesystem process.
+///
+/// Definition at line 486 of file fuse.h.
+///
+/// ```
+#[instrument]
+pub unsafe extern "C" fn open<FS: Filesystem>(
+    path: *const i8,
+    fuse_file_info: *mut libfuse::fuse_file_info,
+) -> i32 {
+    ensure_errno!(!path.is_null(), Errno::EINVAL);
+    ensure_errno!(!fuse_file_info.is_null(), Errno::EINVAL);
+    ensure_errno!(path.is_aligned(), Errno::EINVAL);
+    ensure_errno!(fuse_file_info.is_aligned(), Errno::EINVAL);
+
+    let flags = unsafe { OpenFlags((*fuse_file_info).flags) };
+
+    // we only support readonly access
+    ensure_errno!(!flags.readonly(), Errno::EACCES);
+
+    let path = try_errno!(unsafe { path_from_c_ptr(path) });
+
+    // currently this is a NOOP
+    debug!("enter: open('{}') // NOOP", path.to_string_lossy());
+    return 0;
+}
+
+pub unsafe extern "C" fn read<FS: Filesystem>(
+    path: *const i8,
+    buf: *mut i8,
+    size: usize,
+    offset: libc::off_t,
+    fuse_file_info: *mut libfuse::fuse_file_info,
+) -> i32 {
+    ensure_errno!(!path.is_null(), Errno::EINVAL);
+    ensure_errno!(!buf.is_null(), Errno::EINVAL);
+    ensure_errno!(!fuse_file_info.is_null(), Errno::EINVAL);
+    ensure_errno!(path.is_aligned(), Errno::EINVAL);
+    ensure_errno!(buf.is_aligned(), Errno::EINVAL);
+    ensure_errno!(fuse_file_info.is_aligned(), Errno::EINVAL);
+
+    let size: u32 = if size == 0 {
+        // nothing to do, no space left in buffer
+        return 0;
+    } else {
+        ensure_errno!(size <= i32::MAX as usize, Errno::EDOM);
+        size as u32
+    };
+
+    let fs = try_errno!(fetch_fs_from_registry::<FS>());
+
+    // SAFETY: we check invariants at the function start
+    let path = try_errno!(unsafe { path_from_c_ptr(path) });
+
+    debug!(
+        "enter: read('{}', buf={buf}, size={size}, offset=0x{offset:x})",
+        path.to_string_lossy(),
+        buf = buf.addr()
+    );
+    let result = try_errno!(call_into_user_code::<FS, _>("read", || fs.read(
+        &path,
+        size,
+        offset as isize
+    )));
+    let n_bytes = result.content.len();
+    // if `n_bytes` is smaller than `size`, it _will_ fit inside i32. see checks at the top.
+    ensure_errno!(n_bytes <= size as usize, Errno::ENOSYS);
+    let n_bytes = n_bytes as i32;
+    debug!(
+        "return: read => ({n_bytes}):'{}'",
+        String::from_utf8_lossy(&result.content[0..50]) + "…"
+    );
+
+    // Safety: we checked that the buffer is big enough to hold the returned data (if `size` argument was correct).
+    //         Also we checked that the pointer is aligned and non-null.
+    unsafe {
+        ptr::copy_nonoverlapping(
+            result.content.as_ptr(),
+            buf as *mut u8,
+            result.content.len(),
+        );
+    }
+
+    return n_bytes;
 }
 
 fn fetch_fs_from_registry<FS: Filesystem>() -> Result<Arc<FS>, (String, Errno)> {
@@ -520,13 +675,55 @@ unsafe fn path_from_c_ptr(c_str: *const c_char) -> Result<PathBuf, (String, Errn
 //
 //static STATE: Vec<Arc<&dyn Filesystem>> = Vec::new();
 
-pub struct FuseHandle(i32);
+// ALTERNATIVE: manually spawn fuse workers. Store handle like this:
+// pub struct FuseHandle(i32);
 
+/// usage: /home/ra1n/.cache/cargo_target/debug/examples/hello [options] <mountpoint>
+///
+/// FUSE options:
+///     -h   --help            print help
+///     -V   --version         print version
+///     -d   -o debug          enable debug output (implies -f)
+///     -f                     foreground operation
+///     -s                     disable multi-threaded operation
+///     -o clone_fd            use separate fuse device fd for each thread
+///                            (may improve performance)
+///     -o max_idle_threads    the maximum number of idle worker threads
+///                            allowed (default: -1)
+///     -o max_threads         the maximum number of worker threads
+///                            allowed (default: 10)
+///     -o kernel_cache        cache files in kernel
+///     -o [no]auto_cache      enable caching based on modification times (off)
+///     -o no_rofd_flush       disable flushing of read-only fd on close (off)
+///     -o umask=M             set file permissions (octal)
+///     -o fmask=M             set file permissions (octal)
+///     -o dmask=M             set dir  permissions (octal)
+///     -o uid=N               set file owner
+///     -o gid=N               set file group
+///     -o entry_timeout=T     cache timeout for names (1.0s)
+///     -o negative_timeout=T  cache timeout for deleted names (0.0s)
+///     -o attr_timeout=T      cache timeout for attributes (1.0s)
+///     -o ac_attr_timeout=T   auto cache timeout for attributes (attr_timeout)
+///     -o noforget            never forget cached inodes
+///     -o remember=T          remember cached inodes for T seconds (0s)
+///     -o modules=M1[:M2...]  names of modules to push onto filesystem stack
+///     -o allow_other         allow access by all users
+///     -o allow_root          allow access by root
+///     -o auto_unmount        auto unmount on process termination
+///
+/// Options for subdir module:
+///     -o subdir=DIR           prepend this directory to all paths (mandatory)
+///     -o [no]rellinks         transform absolute symlinks to relative
+///
+/// Options for iconv module:
+///     -o from_code=CHARSET   original encoding of file names (default: UTF-8)
+///     -o to_code=CHARSET     new encoding of the file names (default: UTF-8)
+///
 pub fn fuse_main<FS: Filesystem>(
     fs: FS,
     mount_point: impl AsRef<Path>,
     args: impl Iterator<Item = impl AsRef<str>>,
-) -> Result<FuseHandle> {
+) -> Result<()> {
     let Some(mount_point) = mount_point.as_ref().to_str() else {
         bail!(
             "mount point '{}' is not valid UTF-8",
@@ -534,7 +731,13 @@ pub fn fuse_main<FS: Filesystem>(
         )
     };
 
-    let mut args = obtain_argv_as_mut_array(args)
+    // we always run single-threaded, and in the foreground.
+    let mut args = args.map(|s| s.as_ref().to_owned()).collect_vec();
+    args.push("-f".into());
+    args.push("-s".into());
+    args.append(&mut vec!["-o".into(), "auto_unmount".into()]);
+
+    let mut args = obtain_argv_as_mut_array(args.iter())
         .wrap_err("converting `env::args()` to a mutable C string array `(*mut *mut c_char)`")?;
     //let arg_ptrs = args.iter().map(|c_str| c_str.as_mut()).collect_vec();
 
@@ -548,8 +751,8 @@ pub fn fuse_main<FS: Filesystem>(
     let fuse_ops = libfuse::fuse_operations {
         // elementary
         getattr: Some(getattr::<FS>),
-        open: todo!(),
-        read: todo!(),
+        open: Some(open::<FS>),
+        read: Some(read::<FS>),
         readdir: Some(readdir::<FS>),
 
         // rest
@@ -623,7 +826,7 @@ pub fn fuse_main<FS: Filesystem>(
     // SAFETY: use mut_ptr() to not trust the c code to not mutate?
     //let fuse_handle = unsafe { libfuse::fuse_mount(fuse_fs, mount_point_c_str.as_ptr()) };
 
-    Ok(FuseHandle(todo!("fuse_handle")))
+    Ok(FuseHandle(0))
 }
 
 fn obtain_argv_as_mut_array(
