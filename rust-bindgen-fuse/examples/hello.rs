@@ -29,7 +29,7 @@ impl Filesystem for HelloFS {
                 stat: Stat::new_simple(
                     TypedModeBuilder::builder()
                         .file_type(FileType::Directory)
-                        .permissions(FilePermissions::new(0o755).unwrap())
+                        .permissions(FilePermissions::new(0o555).unwrap())
                         .build(),
                     2, // "/" and "/."
                     0, // size seems irrelevant for filesystems.

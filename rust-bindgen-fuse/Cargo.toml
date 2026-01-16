@@ -19,4 +19,5 @@ tracing = { version = "0.1.41", features = ["log"] }
 typed-builder = "0.23.2"
 
 [dev-dependencies]
+chrono = "0.4.43"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

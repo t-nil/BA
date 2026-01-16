@@ -2,6 +2,11 @@
 //!
 //! - `nix::Error` seems to wrapp errno compatibly
 //! - FUSE callbacks seem to return `-errno` (<https://libfuse.github.io/doxygen/structfuse__operations.html#Detailed%20Description>)
+//! - three categories of bug/vuln sources:
+//!   - unsafe constraints
+//!   - (esp.) panics across boundaries
+//!   - subtle logic errors (looking at you `as` >_>)
+//!   - (checking user code?)
 //!
 //! ### big questions
 //! - transparent "type checker"-only wrappers, or add one level of indirection?
@@ -31,7 +36,7 @@
 #![warn(clippy::pedantic)]
 
 use std::{
-    ffi::{CStr, CString, c_char, c_int, c_void},
+    ffi::{CStr, CString, c_char, c_void},
     fmt,
     mem::ManuallyDrop,
     ops::Range,
@@ -52,8 +57,6 @@ use singleton_registry::define_registry;
 use thiserror::Error;
 use tracing::{debug, error, info, instrument};
 use typed_builder::TypedBuilder;
-
-static DEBUG: bool = matches!(option_env!("DEBUG"), Some(_));
 
 #[allow(clippy::all)]
 #[allow(clippy::pedantic)]
@@ -572,7 +575,7 @@ pub unsafe extern "C" fn read<FS: Filesystem>(
     let path = try_errno!(unsafe { path_from_c_ptr(path) });
 
     debug!(
-        "enter: read('{}', buf={buf}, size={size}, offset=0x{offset:x})",
+        "enter: read('{}', buf=0x{buf:x}, size={size}, offset=0x{offset:x})",
         path.to_string_lossy(),
         buf = buf.addr()
     );
@@ -583,12 +586,21 @@ pub unsafe extern "C" fn read<FS: Filesystem>(
     )));
     let n_bytes = result.content.len();
     // if `n_bytes` is smaller than `size`, it _will_ fit inside i32. see checks at the top.
-    ensure_errno!(n_bytes <= size as usize, Errno::ENOSYS);
+    ensure_errno!(n_bytes <= size as usize, Errno::ENOSYS); // FIXME don't error if user code returns too much data. just truncate it.
     let n_bytes = n_bytes as i32;
-    debug!(
-        "return: read => ({n_bytes}):'{}'",
-        String::from_utf8_lossy(&result.content[0..50]) + "…"
-    );
+    {
+        let content_as_string = String::from_utf8_lossy(
+            &result
+                .content
+                .get(0..50.min(result.content.len()))
+                .unwrap_or("<not found>".as_bytes()),
+        );
+        let char_count = content_as_string.chars().count();
+        debug!(
+            "return: read => ({n_bytes}):'{}'",
+            content_as_string + if char_count > 50 { "…" } else { "" }
+        );
+    }
 
     // Safety: we checked that the buffer is big enough to hold the returned data (if `size` argument was correct).
     //         Also we checked that the pointer is aligned and non-null.
@@ -826,7 +838,7 @@ pub fn fuse_main<FS: Filesystem>(
     // SAFETY: use mut_ptr() to not trust the c code to not mutate?
     //let fuse_handle = unsafe { libfuse::fuse_mount(fuse_fs, mount_point_c_str.as_ptr()) };
 
-    Ok(FuseHandle(0))
+    Ok(())
 }
 
 fn obtain_argv_as_mut_array(
