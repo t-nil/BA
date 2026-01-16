@@ -1,16 +1,12 @@
 use std::{
-    borrow::Cow,
     collections::HashSet,
     env::args,
     iter::{self, Peekable},
-    path::{Components, Path, PathBuf},
+    path::Path,
     sync::LazyLock,
 };
 
-use color_eyre::{
-    Result,
-    eyre::{bail, ensure},
-};
+use color_eyre::{Result, eyre::bail};
 use itertools::Itertools as _;
 use nix::errno::Errno;
 use rust_bindgen_fuse::{
@@ -257,8 +253,14 @@ impl Filesystem for HelloFS {
                         vec![]
                     } else {
                         let content = &content.as_bytes()[offset..];
+                        let range_end = (content.len() - 1).min(n as usize);
                         // truncate to return a maximum of `n` bytes, to not overflow the user buffer
-                        content[..(content.len() - 1).min(n as usize)].to_owned()
+                        let mut content = content[..range_end].to_owned();
+                        // we only serve text files, so unconditionally append a newline if we read til the end.
+                        if range_end < n as usize && content.last().is_none_or(|c| *c != b'\n') {
+                            content.push(b'\n')
+                        }
+                        content
                     }
                 } else {
                     error!("negative offset is not supported");
