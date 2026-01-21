@@ -3,3 +3,7 @@ defaults:
   max_columns: 120
   max_rows: 28
   validate_overflows: always
+export:
+  dimensions:
+    columns: 120
+    rows: 36
