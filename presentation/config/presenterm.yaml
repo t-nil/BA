@@ -1,0 +1,5 @@
+
+defaults:
+  max_columns: 120
+  max_rows: 28
+  validate_overflows: always
