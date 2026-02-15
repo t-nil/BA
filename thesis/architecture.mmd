@@ -1,0 +1,12 @@
+
+graph TD
+    fs_trait[trait Filesystem]
+    libfuse_wrapper[libfuse Wrapper]
+    libfuse
+    user_code["User code (concrete filesystem)"]
+
+    libfuse_wrapper-- "provides" -->fs_trait
+    
+    // klassendiagramm für `trait FS`
+    // auch klassen/typdiagramme für die high-level wrapper
+

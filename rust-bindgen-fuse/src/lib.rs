@@ -55,7 +55,7 @@ use itertools::Itertools as _;
 use nix::{Error as Errno, libc};
 use singleton_registry::define_registry;
 use thiserror::Error;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, instrument};
 use typed_builder::TypedBuilder;
 
 #[allow(clippy::all)]
@@ -224,7 +224,7 @@ pub struct TypedModeBuilder {
     //#[builder(setter(transform = |x: FilePermissions| x.0 ))]
     permissions: FilePermissions,
 
-    // `default = false` is implied by fallbac
+    // `default = false` is implied by fallback
     #[builder(setter(strip_bool(fallback = toggle_setuid)))]
     setuid: bool,
     #[builder(setter(strip_bool(fallback = toggle_setgid)))]
@@ -427,7 +427,7 @@ pub unsafe extern "C" fn getattr<FS: Filesystem>(
     debug!("return: getfattr => {}", path.to_string_lossy());
 
     // SAFETY: we assume that the two outptrs received by libfuse are not dangling. We can check for alignment and
-    // non-null-ity, but invalid memory addresses will not be catched.
+    // non-null-ity, but invalid memory addresses will not be caught.
     unsafe {
         *stat_out = *stat;
     }
@@ -755,8 +755,10 @@ pub fn fuse_main<FS: Filesystem>(
 
     //let (argc, argv): (c_int, *mut *mut c_char) = { (args.len() as c_int, nix::libc::mall) };
 
-    let mount_point_c_str = CString::new(mount_point)
-        .wrap_err_with(|| format!("mount point '{mount_point}' is not a valid CString"))?;
+    // `fuse_main` automatically reads the mount point as positional arg.
+    //
+    // let mount_point_c_str = CString::new(mount_point)
+    //     .wrap_err_with(|| format!("mount point '{mount_point}' is not a valid CString"))?;
 
     state::register(fs);
 

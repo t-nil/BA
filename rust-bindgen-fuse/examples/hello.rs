@@ -1,11 +1,11 @@
 use std::{
     env::args,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use color_eyre::{
     Result,
-    eyre::{bail, ensure},
+    eyre::bail,
 };
 use itertools::Itertools as _;
 use nix::errno::Errno;

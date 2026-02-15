@@ -166,7 +166,7 @@ fn find_dir<'a>(path: &Path, root: &'a Dir) -> Result<&'a Dir, Errno> {
     let path_str = path.to_str().expect("always unicode");
     let mut components = path.components().peekable();
     let mut last_dirs = vec![];
-    let mut current_dir = &*ROOT;
+    let mut current_dir = root;
     loop {
         let Some(current_entry) = components.next() else {
             error!("'{path_str}': empty Components iterator. This should NEVER happen!");
@@ -242,6 +242,7 @@ impl Filesystem for HelloFS {
         todo!("currently unused in API")
     }
 
+    #[instrument]
     fn read(&self, path: &Path, n: u32, offset: isize) -> Result<ReadRetVal, nix::Error> {
         let path = path.to_str().expect("unicode…");
         if let Some((_, content_fn)) = FILES.iter().find(|(p, _)| *p == path) {
@@ -253,7 +254,7 @@ impl Filesystem for HelloFS {
                         vec![]
                     } else {
                         let content = &content.as_bytes()[offset..];
-                        let range_end = (content.len() - 1).min(n as usize);
+                        let range_end = (content.len()).min(n as usize);
                         // truncate to return a maximum of `n` bytes, to not overflow the user buffer
                         let mut content = content[..range_end].to_owned();
                         // we only serve text files, so unconditionally append a newline if we read til the end.
@@ -289,7 +290,6 @@ fn main() -> Result<()> {
     };
 
     let fs = HelloFS;
-
     let _fuse = rust_bindgen_fuse::fuse_main(fs, mount_point, std::env::args())?;
     Ok(())
 }
