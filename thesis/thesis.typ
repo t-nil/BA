@@ -19,6 +19,12 @@
 
 = Introduction
 
+- Rust is increasing usage in system level
+
+== Rust
+
+== FUSE
+
 // unterschied zur motivation:
 // - "eine ebene drüber, ungenauer"
 // - TODO löhr fragen: brauche ich beides, passt das so?
@@ -131,7 +137,7 @@
 === `stat`
 - gives basic info about FS entry
 - returned by getattr
-- 
+-
 === `fuse_file_info`
 === FileMode
 ==== Typed builder
