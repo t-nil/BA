@@ -57,21 +57,53 @@
 
 = Motivation
 
-@bugden2022rustprogramminglanguagesafety
-@방인영2024study
-@287352
-@10.1145_3428204
+// @bugden2022rustprogramminglanguagesafety
+// @방인영2024study
+// @287352
+// @10.1145_3428204
+// - Low level APIs are dangerous when misused (by concept)
+// - Documentation is rarely read completely and correctly, and rarely updated consistently
+// - Would be nice if Compiler could enforce correct usage
+// - you (usually) need a strong type system for that
+// // TODO find grundlagenbücher about type systems / type theory (scholar, chatgpt, opac)
+// - Rust provides that and is usable as system language
+// - (see linux kernel efforts to move rust into the project, especially in filesystems area)
+// - can CVEs be effectively prevented?
+// - (Or, if non-exploitable, can crashes be prevented?)
+//
+// TODO stuff aus Praxisbericht/Projektbericht klauen?
 
+// TODO i talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
 
-- Low level APIs are dangerous when misused (by concept)
-- Documentation is rarely read completely and correctly, and rarely updated consistently
-- Would be nice if Compiler could enforce correct usage
-- you (usually) need a strong type system for that
-// TODO find grundlagenbücher about type systems / type theory (scholar, chatgpt, opac)
-- Rust provides that and is usable as system language
-- (see linux kernel efforts to move rust into the project, especially in filesystems area)
-- can CVEs be effectively prevented?
-- (Or, if non-exploitable, can crashes be prevented?)
+Since the beginning of programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
+For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
+
+One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type. Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. This discrepancy,between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
+
+// TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
+
+In languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
+
+#figure(
+  ```rust
+  pub struct NonZeroI32(i32);
+
+  impl NonZeroI32 {
+    pub fn new(n: i32) -> Result<Self> {
+      if n == 0 {
+        Err("n == 0 is not allowed!")
+      } else {
+        Ok(n)
+      }
+    }
+  }
+
+  pub fn reciprocal(n: NonZeroI32) -> NonZeroI32 {
+    // ...
+  }
+  ```,
+  caption: [A new type `NonZeroI32` that represents the idea of a 32-bit integer *guaranteed* to not be zero],
+) <nonzeroi32_reciprocal>
 
 = Review of similar solutions
 
