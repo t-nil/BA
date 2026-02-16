@@ -1,41 +1,12 @@
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
-#import "@preview/glossarium:0.5.10": gls, glspl, make-glossary, print-glossary, register-glossary
-#show: make-glossary
-
 // TODO use fletcher
 // @löhr: github links, doku etc.: muss das in die bibliographie rein oder reichen fußnoten?
 
-#let glossary-list = (
-  (
-    key: "trampoline_function",
-    long: "trampoline function",
-    description: "TODO",
-  ),
-  (
-    key: "libfuse_wrapper",
-    long: "the libfuse wrapper",
-    description: "TODO - our lil' project",
-  ),
-  (
-    key: "libfuse",
-    long: "TODO libfuse",
-    description: "TODO",
-  ),
-  (
-    key: "UB",
-    short: "UB",
-    long: "Undefined Behaviour",
-    description: "TODO",
-  ),
-  (
-    key: "newtype_struct",
-    long: "newtype struct",
-    description: "TODO",
-  ),
-  // Add more terms
-)
+#import "@preview/glossarium:0.5.10": gls, glspl, make-glossary, print-glossary, register-glossary
+#show: make-glossary
+#import "glossary.typ": glossary-list
 #register-glossary(glossary-list)
 
 #set heading(numbering: "1.1")
@@ -183,8 +154,8 @@ There are two basic options how to use the trampolines:
 
 A way to implement option 1 is provided in the form of a ```c void *private_data``` pointer that can be passed to @libfuse during filesystem registration. This pointer can contain arbitrary user-specified data, and is not used by @libfuse except for making it available to every fuse operation via the ```c fuse_get_context```#footnote[https://libfuse.github.io/doxygen/fuse_8h.html#a5fce94a5343884568736b6e0e2855b0e] function.
 
-Since it is possible /* FIXME really? prob. not, is a trait object and therefor fat. we need to use heap alloc, e.g. Box::into_raw() or sim. */ to store a Rust pointer inside a C void pointer, @libfuse_wrapper can submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method. This has the following disadvantages:
-- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the /* TODO kampf/anstrengung/undertaking */ undertaking of creating safe systems-level code. Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory. In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system /* TODO quote? */, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefor to @UB. This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
+Since it is possible /* FIXME really? prob. not, is a trait object and e fat. we need to use heap alloc, e.g. Box::into_raw() or sim. */ to store a Rust pointer inside a C void pointer, @libfuse_wrapper can submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method. This has the following disadvantages:
+- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the /* TODO kampf/anstrengung/undertaking */ undertaking of creating safe systems-level code. Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory. In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system /* TODO quote? */, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefore to @UB. This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
 
 // FIXME no second disadvantage?
 
@@ -194,7 +165,7 @@ The generic approach is then combined with a singleton registry#footnote[https:/
 We can now store the concrete user-supplied filesystem struct inside this registry and use the type of this filesystem struct as index, which additionally will be deduced implicitly by the compiler from the argument types of our initialization function.
 That means, given there are no other implemenations of our `Filesystem` trait in scope when declaring the generic functions, the type system guarantees us that the user's type is the only one that can be used for dispatching, shielding even against potential programmer oversight.
 
-This has the drawback of only allowing one instance of a concrete `Filesystem` type to be mounted per process. But since --- if needed --- @newtype_struct:pl can be used to create different concrete types with minimal boilerplate, this is deemed tolerable.
+This has the drawback of only allowing one instance of a concrete `Filesystem` type to be mounted per process. But since --- if needed --- @newtype_struct:pl can be used to create different concrete types with minimal boilerplate, this was deemed tolerable.
 
 #figure(
   ```rust
@@ -243,7 +214,11 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 // Verweis auf `panics/unwind across FFI`
 
 = Evaluation
+
+
+
 @cwe-top25-2025
+
 // hier CVEs auswerten, vlt oben in Methodology schon konkret auflisten
 == Beispiel-FS `hello2`
 
@@ -255,6 +230,8 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 
 #bibliography("bibliography.bib", style: "ieee")
 
+#pagebreak()
+= Glossary
 // Your document body
 #print-glossary(
   glossary-list,
