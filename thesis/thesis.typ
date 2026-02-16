@@ -1,7 +1,42 @@
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
+
+#import "@preview/glossarium:0.5.10": gls, glspl, make-glossary, print-glossary, register-glossary
+#show: make-glossary
+
 // TODO use fletcher
 // @löhr: github links, doku etc.: muss das in die bibliographie rein oder reichen fußnoten?
+
+#let glossary-list = (
+  (
+    key: "trampoline_function",
+    long: "trampoline function",
+    description: "TODO",
+  ),
+  (
+    key: "libfuse_wrapper",
+    long: "the libfuse wrapper",
+    description: "TODO - our lil' project",
+  ),
+  (
+    key: "libfuse",
+    long: "TODO libfuse",
+    description: "TODO",
+  ),
+  (
+    key: "UB",
+    short: "UB",
+    long: "Undefined Behaviour",
+    description: "TODO",
+  ),
+  (
+    key: "newtype_struct",
+    long: "newtype struct",
+    description: "TODO",
+  ),
+  // Add more terms
+)
+#register-glossary(glossary-list)
 
 #set heading(numbering: "1.1")
 #outline()
@@ -20,6 +55,9 @@
 = Introduction
 
 - Rust is increasing usage in system level
+- but still many big projects (linux etc.) are written in C
+
+// MAYBE exkurs über linear types?
 
 == Rust
 
@@ -38,6 +76,7 @@
 @방인영2024study
 @287352
 @10.1145_3428204
+
 
 - Low level APIs are dangerous when misused (by concept)
 - Documentation is rarely read completely and correctly, and rarely updated consistently
@@ -132,6 +171,42 @@
   - con: only one instance per ```Filesystem``` struct type per process.
     - workaround: just use wrapper structs (can be done easily from user code)
 
+Since the libfuse initialization routine takes a struct of callback function pointers (`fuse_ops`), that creates the following problem.
+Since the C signature is predetermined, user functions cannot be used, because that would force signatures of user functions to use the lower-level C types which we try to avoid.
+That means, even though there is a one-to-one correspondence between FUSE operation callbacks and trait methods on the `Filesystem` trait, they are not compatible and cannot be used interchangably.
+The obvious approach is to provide #glspl("trampoline_function"), which then wrap, transform and safety-check the C type values on call and dispatch into user code.
+A non-trivial problem, that is not obvious at first sight, is how the trampoline knows which filesystem implementation to dispatch to.
+There are two basic options how to use the trampolines:
+
+1. use one global trampoline per callback, and somehow transport the choice on which filesystem to use inside the C arguments that @libfuse_wrapper gets passed by @libfuse.
+2. somehow generate a set of trampolines per user filesystem, which are then hard-coded towards the specific filesystem implementation.
+
+A way to implement option 1 is provided in the form of a ```c void *private_data``` pointer that can be passed to @libfuse during filesystem registration. This pointer can contain arbitrary user-specified data, and is not used by @libfuse except for making it available to every fuse operation via the ```c fuse_get_context```#footnote[https://libfuse.github.io/doxygen/fuse_8h.html#a5fce94a5343884568736b6e0e2855b0e] function.
+
+Since it is possible /* FIXME really? prob. not, is a trait object and therefor fat. we need to use heap alloc, e.g. Box::into_raw() or sim. */ to store a Rust pointer inside a C void pointer, @libfuse_wrapper can submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method. This has the following disadvantages:
+- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the /* TODO kampf/anstrengung/undertaking */ undertaking of creating safe systems-level code. Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory. In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system /* TODO quote? */, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefor to @UB. This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
+
+// FIXME no second disadvantage?
+
+Both disadvantages would in theory prevented by a solution after option 2, and thankfully, with the use of generics, Rust brings includes the tools to implement such a solution. As seen in @trampoline_fn_signature, this exemplary trampoline function is generic over types implementing our `Filesystem` trait.
+This leads the Rust compiler to generate a concrete, independent `getattr` trampoline function for every trait implementation of `Filesystem` that is used to call our initialization function.
+The generic approach is then combined with a singleton registry#footnote[https://crates.io/crates/singleton-registry] which provides a global map of values, indexed by types.
+We can now store the concrete user-supplied filesystem struct inside this registry and use the type of this filesystem struct as index, which additionally will be deduced implicitly by the compiler from the argument types of our initialization function.
+That means, given there are no other implemenations of our `Filesystem` trait in scope when declaring the generic functions, the type system guarantees us that the user's type is the only one that can be used for dispatching, shielding even against potential programmer oversight.
+
+This has the drawback of only allowing one instance of a concrete `Filesystem` type to be mounted per process. But since --- if needed --- @newtype_struct:pl can be used to create different concrete types with minimal boilerplate, this is deemed tolerable.
+
+#figure(
+  ```rust
+  pub unsafe extern "C" fn getattr<FS: Filesystem>(
+      path: *const i8,
+      stat_out: *mut libfuse::stat,
+      _fuse_file_info_out: *mut libfuse::fuse_file_info,
+  ) -> i32 {
+  ```,
+  caption: [An exemplary trampoline function signature implementing compile-time static dispatch via generics],
+) <trampoline_fn_signature>
+
 == Type modeling
 // löhr: ist es ok, die unterkapitel nach technischen (Typ-)namen zu benennen, oder soll ich allgemeinere kategorien wählen?
 === `stat`
@@ -179,3 +254,8 @@
 
 
 #bibliography("bibliography.bib", style: "ieee")
+
+// Your document body
+#print-glossary(
+  glossary-list,
+)
