@@ -1,3 +1,5 @@
+// GLOBAL TODOS
+// - [] fix glossary keys being displayed when no short variant exists
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
@@ -9,8 +11,20 @@
 #import "glossary.typ": glossary-list
 #register-glossary(glossary-list)
 
-#set heading(numbering: "1.1")
-#outline()
+
+#import "@local/ohm:0.1.0": thesis
+
+
+// requirements:
+// - author - dict{name, student-id}
+// - examinors - dict{first, second}
+// - every figure has a caption
+#show: rest => {
+  thesis(
+    author: (name: "Florian Meißner", student-id: "3210376"),
+    examinors: (first: "Prof. Dr. Hans Löhr", second: "Prof. Dr. Michael Zapf"),
+  )[#rest]
+}
 
 = Outline
 
