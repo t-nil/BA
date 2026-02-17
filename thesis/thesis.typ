@@ -42,11 +42,17 @@
 - Rust is increasing usage in system level
 - but still many big projects (linux etc.) are written in C
 
+
+Since the beginning of programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
+For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
+
+One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type. Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. This discrepancy,between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
+
+// TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
+
+In languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
+
 // MAYBE exkurs über linear types?
-
-== Rust
-
-== FUSE
 
 // unterschied zur motivation:
 // - "eine ebene drüber, ungenauer"
@@ -56,6 +62,42 @@
 @bugden2022rustprogramminglanguagesafety
 
 = Motivation
+
+
+
+== Rust
+// TODO more sub headings?
+
+- Modern language with many features that can increase correctness and safety
+- is marketed/intended as a low level language, usually competes near C in benchmarks
+  - Rust in Linux kernel
+  - RedoxOS
+  - coreutils / libc rewrite
+- features
+  - borrow checker / lifetime tracking / ownership tracking
+  - strict types /* TODO define, quote */, (almost) no implicit conversions
+  - RAII / destructors / `Drop` trait
+  - no data races
+  - fearless concurrency // <-> data races?
+  - error handling
+  - ADTs / modelling complex types
+  - generics
+  - typestate pattern
+- Unsafe rust
+  - *what we keep, what we lose*
+  - additional promises to uphold
+  - (ausblick: additional tools, static analysis, sanitizers etc.)
+
+== FUSE
+- filesystem as process in userspace
+- don't have to build kernel modules (safer, easier dev workflow)
+- should be comparable though (why? give reasons)
+- architecture (/* TODO image */)
+  - fuse kernel module
+  - libfuse
+  - FS impl
+  - *=> our layer*
+
 
 // @bugden2022rustprogramminglanguagesafety
 // @방인영2024study
@@ -74,15 +116,6 @@
 // TODO stuff aus Praxisbericht/Projektbericht klauen?
 
 // TODO i talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
-
-Since the beginning of programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
-For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
-
-One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type. Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. This discrepancy,between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
-
-// TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
-
-In languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
 
 #figure(
   ```rust
