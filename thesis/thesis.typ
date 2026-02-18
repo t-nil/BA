@@ -26,17 +26,6 @@
   )[#rest]
 }
 
-= Outline
-
-1. Introduction
-2. Motivation
-3. Review of similar solutions
-4. Methodology
-5. Implementation
-6. Evaluation
-7. Conclusion
-8. Future work
-
 = Introduction
 
 - Rust is increasing usage in system level
@@ -181,11 +170,37 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 
 == Basic C interop
 // source: rust unsafe invariants
+// - https://rust-lang.github.io/unsafe-code-guidelines/ => obsolete, out of date?
+// - https://doc.rust-lang.org/nomicon/what-unsafe-does.html => too informal?
+
+Safe @Rust can never (sans compiler errors) cause @UB in the resulting binary program. /* TODO quote */
+In unsafe @Rust, this is not the case; the programing person now has to uphold several invariants to ensure @soundness. /* TODO quote */
+In contrast to C, Rust limits these invariants to a set of specific, well-documented cases.
+This makes reviewing the @soundness property of unsafe code easier.
+
 === Pointers
-- for every C pointer we have to use
-  - is it aligned?
-  - is it non-null?
-  - (is it valid? not checkable without allocator control or sanitizer or sim.)
+
+Regarding use of raw pointers in unsafe Rust, the following invariants exist:
+
+1) No dereferencing of /* FIXME @dangling */ or /* FIXME @unaligned */ /* FIXME point to `Alignment` */ pointers.
+2) Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
+3) Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
+4) Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one combination of bits that would correspond to a zero and is therefor illegal.
+
+Because @libfuse calls all our callbacks with atleast one C pointer, we have to check these invariants as rigidly as possible before we call into user code, if we want to eliminate them as sources of @UB.
+
+1. We have to differentiate between three cases:
+  - *Unaligned pointer*: this is easy, as Rust provides ```rust ptr::is_aligned()```.
+  - *Dangling null-pointer*: this is also easy, both manually and through the Rust-provided ```rust ptr::is_null()```.
+  - *Dangling non-null pointer*: this happens when a pointer is used-after-free or if pointer arithmetic goes wrong, and is much harder to avoid.
+    Since we don't control memory allocation in C, we largely have to trust C code to not pass us pointers from this category.
+    This would cause UB and should therefor be documented visibly as soundness assumption.
+2. For pointers passed to us by @libfuse, the solution is simply to not create a reference to it.
+  If it is necessary to pass a mutable reference into user code, an intermediate owned value must be created, and the target value must be copied in and out of that intermediate.
+3. When dealing with non-const pointers, care must be taken to not create a shared reference to it.
+  Const pointers don't matter for that aspect, since it is impossible to modify values through them, given they are not cast into non-const pointers.
+4. This only matters when primitive C-style casts or ```rust mem::transmute()``` /* todo explain? define? quote? */ are used, as otherwise the Rust typesystem protects us from writing values of the wrong type, even inside unsafe blocks.
+  Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
 
 === Strings and Unicode
 - rust only allows UTF-8 Strings
@@ -197,6 +212,7 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 - have to wrap every possible panic point inside ```rust catch_unwind()```
 - not provably panic-free with just compiler
   - but there is an interesting crate: `https://github.com/dtolnay/no-panic` => *future work*
+// EXTRA what about possible (hidden) panics in my own code? integer overflow, slice indexing etc.
 
 == FUSE operations
 - these 4 functions seem to be the bare minimum for a R/O filesystem (see libfuse example `hello`)

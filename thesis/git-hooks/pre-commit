@@ -1,0 +1,6 @@
+#!/bin/bash
+
+echo -e "\e[36mCompiling report with \`typst compile report.typ\` and adding PDF to repo"
+echo -e "\`git commit --no-verify\` to skip… (e.g. if you don't have typst or Nils' template installed)\e[0m"
+
+typst compile report.typ && git add report.pdf

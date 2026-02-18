@@ -39,5 +39,15 @@
     long: "the `afs` filesystem",
     description: "TODO",
   ),
+  (
+    key: "Rust",
+    long: "Rust",
+    description: "TODO",
+  ),
+  (
+    key: "soundness",
+    long: "soundness",
+    description: "TODO define & quote",
+  ),
   // Add more terms
 )

@@ -7,8 +7,9 @@
 = Sources
 
 == INBOX
-https://www.cs.hmc.edu/%7Egeoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html (from https://unix.stackexchange.com/questions/325473/in-fuse-how-do-i-get-th  e-information-about-the-user-and-the-process-that-is-try)
+- https://www.cs.hmc.edu/%7Egeoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html (from https://unix.stackexchange.com/questions/325473/in-fuse-how-do-i-get-th  e-information-about-the-user-and-the-process-that-is-try)
 - https://security.googleblog.com/2022/12/memory-safe-languages-in-android-13.html (from @10592287)
+- https://blog.reverberate.org/2025/02/03/no-panic-rust.html
 
 == @10.1145_3102980.3103006
 Difference:
