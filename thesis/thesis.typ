@@ -203,16 +203,62 @@ Because @libfuse calls all our callbacks with atleast one C pointer, we have to 
   Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
 
 === Strings and Unicode
-- rust only allows UTF-8 Strings
-- although there are wrappers for C-style strings, most APIs are built to only work on Unicode
-- => we disallow non-UTF-8 strings for simplicity
 
-=== Panics across FFI boundaries
+Rust's native string types (`str`, `String`) exclusively store UTF-8.#cite(<rust-book>, supplement: "ch. 8.2")
+The main kind of strings this library needs to handle are the file paths that filesystem callbacks are called on.
+The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite */
+Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, I chose to /* FIXME stil? */ not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question. /* FIXME stil? */
+
+=== Unwinding across FFI boundaries
 - => is UB
 - have to wrap every possible panic point inside ```rust catch_unwind()```
 - not provably panic-free with just compiler
   - but there is an interesting crate: `https://github.com/dtolnay/no-panic` => *future work*
 // EXTRA what about possible (hidden) panics in my own code? integer overflow, slice indexing etc.
+
+When a Rust program is compiled with stack unwinding support and a panic is triggered, the default uwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data. /* FIXME lookup & cite? */
+In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
+Doing so correctly is a non-trivial task and can easily lead to @UB.#cite(<rust-reference-1.92>, supplement: "ch. 14")
+On the other hand, turning unwinding off loses helpful stack traces and debug information when a panic happens.
+I therefore decided to keep unwinding behaviour while preventing any panic from propagating across a FFI boundary.
+
+Every function that is visible to C can potentially be called from an environment where unwinding works differently or not at all.
+Therefore each of those functions must be panic-free.
+As of now, there is no compiler flag or lint that detects or prevents use of panicking functions, operators or language keywords.
+As a result, this must be done manually by reviewing the source code of the functions in question, and, recursively, the functions they call.
+A convention exists to note possible panics in a section of the function documentation, but even the standard library doesn't consistenly follow it.
+// MAYBE enumerate sources for panics
+
+// FIXME move to future work? or implement real quick >:)
+One crate /* FIXME define crate */ that tackles this problem is `no_panic`#footnote[https://docs.rs/no-panic/latest/no_panic/] by David Tolnay, a prominent figure amongst the Rust community. It provides the ability to annotate function declarations with an attribute macro, and promises to halt the compilation with an error if the function is *not provably panic-free*.
+This implies that it is possible to write functions that would not panic, but would still not compile if the compiler is unable to prove that property.
+The crate thereby takes a stance typical of Rust philosophy: it is preferable to reject sound programs, than to accept unsound ones.
+
+While preventing panics in self-maintained code requires careful manual analysis, this is not possible for user-provided functions.
+For this, there exists a function ```rust panic::catch_unwind()```@rust-std-1.92 that takes a closure and executes it, catching any unwind that would occur and returning an error instead.
+Wrapping the call to user code inside this function ensures that no panic will be propagated up the call stack from this point on.@catch_unwind
+
+#figure(
+  ```rust
+  fn call_into_user_code<FS: Filesystem, T>(
+      method: &str,
+      user_fn: impl FnOnce() -> Result<T, Errno>,
+  ) -> Result<T, (String, Errno)> {
+      let fs = std::any::type_name::<FS>();
+      std::panic::catch_unwind(core::panic::AssertUnwindSafe(user_fn))
+          .map_err(|panic| {
+              // abort, since internal state of filesystem impl can now be inconsistent
+              state::clear();
+              (
+                  format!("PANIC on `{fs}::{method}`:\n\n{panic:?}\n"),
+                  Errno::ENOTRECOVERABLE,
+              )
+          })
+          .and_then(|inner| inner.map_err(|e| (format!("Error in user code `{fs}::{method}`"), e)))
+  }
+  ```,
+  caption: [An exemplary trampoline function signature implementing compile-time static dispatch via generics],
+) <catch_unwind>
 
 == FUSE operations
 - these 4 functions seem to be the bare minimum for a R/O filesystem (see libfuse example `hello`)
