@@ -1,0 +1,30 @@
+#!/bin/fish
+
+function _die -a status
+  set_color -o brred
+  echo $argv
+  set_color normal
+  exit $status
+end
+
+set STAGED_FILES (git diff --cached --name-only)
+
+set TYPST_COMPILABLES thesis/{thesis,notes}.typ
+set TYPST_INPUTS thesis/{glossary.typ,bibliography.bib}
+
+# =====================================================================================================================
+
+echo -e "\e[36mCompiling typst documents with \`typst compile $doc.typ\` and adding PDF to repo"
+echo -e "\`git commit --no-verify\` to skip… (e.g. if you don't have typst or Nils' template installed)\e[0m"
+
+for f in $STAGED_FILES
+  if contains $f $TYPST_COMPILABLES $TYPST_INPUTS
+    # do work
+    for doc in $TYPST_COMPILABLES
+      typst compile $doc || _die 1 "Compiling $doc failed (`typst compile $doc`)"
+      git add (dirname $doc)/(basename -s ".typ" $doc).pdf || _die 2 "Adding $doc to git failed (`git add $doc`)"
+    end
+  end
+end
+
+#typst compile report.typ && git add report.pdf
