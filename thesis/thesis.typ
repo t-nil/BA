@@ -3,6 +3,13 @@
 // - [] fix "ich/mein/mir/mich"
 // # STYLE
 // @löhr: deutsch passiviert / englisch "we"
+// - https://academics.umw.edu/swc/files/2024/02/IEEE-Formatting-Guidelines.pdf
+//   - capitalize headers
+//
+// # FINAL REFACTOR
+// - grep for glossary/abbrev instances
+// - "therefor"
+// - "atleast"
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
@@ -13,6 +20,8 @@
 #show: make-glossary
 #import "glossary.typ": glossary-list
 #register-glossary(glossary-list)
+
+// FIXME schau dir short/long/blah nochmal an, anscheinend werden bei nichtvorhandensein von short die keywords wiederholt oder so
 
 
 #import "@local/ohm:0.1.0": thesis
@@ -198,31 +207,35 @@ Although the authors claim exploring security and safety benefits as motivation,
 // TODO bindgen
 
 Safe @Rust can never (sans compiler errors) cause @UB in the resulting binary program. /* TODO quote */
-In unsafe @Rust, this is not the case; the programing person now has to uphold several invariants to ensure @soundness. /* TODO quote */
-In contrast to C, Rust limits these invariants to a set of specific, well-documented cases.
+In unsafe @Rust, this is not the case; the programmer now has to uphold several invariants to ensure @soundness. /* TODO quote */
+In the C standard, where behavior in any situation not explicitly defined by the language standard is implicitly “undefined“, Rust limits these invariants to a set of specific, well-documented cases.
 This makes reviewing the @soundness property of unsafe code easier.
 
 === Pointers
 
+// TODO shorthand for u/i8, u/i16.
+// EXTRA what are pointers? stefan "abstraktion über adressen? 'obermenge von references'"
+
 Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
-1. No dereferencing of /* FIXME @dangling */ or /* FIXME @unaligned */ /* FIXME point to `Alignment` */ pointers.
+1. No dereferencing of dangling or unaligned /* FIXME point to `Alignment` */ pointers.
 2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
 3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
-4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one combination of bits that would correspond to a zero and is therefor illegal.
+4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one bit pattern that would correspond to a numeric zero and is therefore illegal.
 
-Because @libfuse calls all our callbacks with atleast one C pointer, we have to check these invariants as rigidly as possible before we call into user code, if we want to eliminate them as sources of @UB.
+Because @libfuse calls all our callbacks with at least one C pointer, we have to check these invariants as rigorously as possible before we call into user code, if we want to eliminate them as sources of @UB.
 
+// TODO punkte oben nochmal kurz wiederholen
 1. We have to differentiate between three cases:
-  - *Unaligned pointer*: this is easy, as Rust provides ```rust ptr::is_aligned()```.
-  - *Dangling null-pointer*: this is also easy, both manually and through the Rust-provided ```rust ptr::is_null()```.
+  - *Unaligned pointer*: this is easy, as Rust provides ```rust ptr::is_aligned()```, which takes a pointer and detects misalignment.
+  - *Dangling null-pointer*: this is also easy, both manually and through the Rust-provided ```rust ptr::is_null()```, which takes a pointer and detects null-ness.
   - *Dangling non-null pointer*: this happens when a pointer is used-after-free or if pointer arithmetic goes wrong, and is much harder to avoid.
     Since we don't control memory allocation in C, we largely have to trust C code to not pass us pointers from this category.
-    This would cause UB and should therefor be documented visibly as soundness assumption.
+    This would cause UB and should therefore be documented visibly as soundness assumption.
 2. For pointers passed to us by @libfuse, the solution is simply to not create a reference to it.
   If it is necessary to pass a mutable reference into user code, an intermediate owned value must be created, and the target value must be copied in and out of that intermediate.
 3. When dealing with non-const pointers, care must be taken to not create a shared reference to it.
-  Const pointers don't matter for that aspect, since it is impossible to modify values through them, given they are not cast into non-const pointers.
+  Const pointers don't matter for that aspect, since it is impossible to modify values through them, given they are not cast to non-const pointers.
 4. This only matters when primitive C-style casts or ```rust mem::transmute()``` /* todo explain? define? quote? */ are used, as otherwise the Rust typesystem protects us from writing values of the wrong type, even inside unsafe blocks.
   Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
 
@@ -296,7 +309,8 @@ Wrapping the call to user code inside this function ensures that no panic will b
 === open
 === read
 
-== Initialization / global state management
+// EXTRA split into two? or one sub the other?
+== Initialization and Global State Management
 // FIXME löhr: _maybe_ ein zwei sätze für sanftere einführung, abbildungen auch immer gut. aber muss auch nicht / ist klar, dass das nicht überall geht.
 
 - We need to supply a number of C functions that know which user impl to call
@@ -313,11 +327,11 @@ Since the libfuse initialization routine takes a struct of callback function poi
 Since the C signature is predetermined, user functions cannot be used, because that would force signatures of user functions to use the lower-level C types which we try to avoid.
 That means, even though there is a one-to-one correspondence between FUSE operation callbacks and trait methods on the `Filesystem` trait, they are not compatible and cannot be used interchangably.
 The obvious approach is to provide #glspl("trampoline_function"), which then wrap, transform and safety-check the C type values on call and dispatch into user code.
-A non-trivial problem, that is not obvious at first sight, is how the trampoline knows which filesystem implementation to dispatch to.
+A non-trivial problem, one that is not obvious at first sight, is how the trampoline knows which filesystem implementation to dispatch to.
 There are two basic options how to use the trampolines:
 
-1. use one global trampoline per callback, and somehow transport the choice on which filesystem to use inside the C arguments that @libfuse_wrapper gets passed by @libfuse.
-2. somehow generate a set of trampolines per user filesystem, which are then hard-coded towards the specific filesystem implementation.
+1. Use one global trampoline per callback, and somehow transport the choice on which filesystem to use inside the C arguments that @libfuse_wrapper gets passed by @libfuse.
+2. Somehow generate a set of trampolines per user filesystem, which are then hard-coded towards the specific filesystem implementation.
 
 A way to implement option 1 is provided in the form of a ```c void *private_data``` pointer that can be passed to @libfuse during filesystem registration. This pointer can contain arbitrary user-specified data, and is not used by @libfuse except for making it available to every fuse operation via the ```c fuse_get_context```#footnote[https://libfuse.github.io/doxygen/fuse_8h.html#a5fce94a5343884568736b6e0e2855b0e] function.
 

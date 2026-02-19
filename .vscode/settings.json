@@ -1,0 +1,32 @@
+{
+    "todo-tree.general.tags": [
+        "BUG",
+        "HACK",
+        "FIXME",
+        "TODO",
+        "[ ]",
+        "[x]",
+        "MAYBE",
+        "EXTRA"
+    ],
+    "todo-tree.highlights.backgroundColourScheme": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "indigo",
+        "violet",
+        "turquoise"
+    ],
+    "todo-tree.highlights.foregroundColourScheme": [
+        "white",
+        "black",
+        "black",
+        "white",
+        "white",
+        "white",
+        "black",
+        "black"
+    ]
+}

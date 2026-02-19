@@ -39,12 +39,16 @@ Difference:
 sources:
 - https://nvd.nist.gov/vuln/search#/nvd/home?cnaSourceIdList=386&sortOrder=5&sortDirection=2&offset=125&rowCount=25&keyword=filesystem&cpeFilterMode=applicability&cpeName=cpe:2.3:o:linux:linux_kernel:*:*:*:*:*:*:*:*&resultType=records
 
+maybe:
+- https://nvd.nist.gov/vuln/detail/CVE-2024-46777 (overflow again)
+- https://nvd.nist.gov/vuln/detail/CVE-2025-38415 (shift OOB)
+
 #show table.cell: set text(size: 0.8em)
 #table(
   columns: 4,
   table.header([*CVE*], [*problem*], [*solution*], []),
   [2011-0699],
-  [unerwartete signed/unsignedness von operatoren führt zum overflow
+  [FIXME deutsch: unerwartete signed/unsignedness von operatoren führt zum overflow
     (und AFAICS zu negativen kmalloc sizes)],
   [ich habe wrapper `Wrapping<Num>` und `Saturating<Num>`,
     und ich kann trivialerweise zB noch `Checked<Num>` bauen.
@@ -52,11 +56,36 @@ sources:
     (kein surprise overflow) und habe zusätzlich eine klare
     annotation ggü der programmierperson, welches verhalten
     auftreten wird.],
-  [🟢],
+  [🟡],
 
   [2025-21646],
   [@procfs expects maximum path length of 255, this was overseen by @afs implementors, leading to a runtime error],
   [if @procfs API were implemented per my concept, maximum path length could be encoded in the type, so compiler could warn/error on oversight],
+  [🟢],
+
+  [2024-55641],
+  [When quota reservation on XFS fails due to IO errors shutting down the filesystem, inodes were mistakenly not unlocked during cleanup.],
+  [Implementing inodes in Rust can make use of the `Drop` trait, automatically unlocking them as they go out of scope.#footnote[see also _RAII_]],
+  [🟢],
+
+  [2024-45003],
+  [Inside the @VFS layer, during inode eviction, a race condition can result in a deadlock when inodes that are marked for deletion get accessed by a filesystem.],
+  [Rust provides no builtin solution to race conditions. While data races are automatically prevented in safe Rust, preventing deadlocks still lies in the hands of the programmer.],
+  [🔴],
+
+  [2022-48869],
+  [A data race in the `gadgetfs` implementation can lead to use-after-free.],
+  [This is a classic example of a multithreaded program not using the correct synchronization primitives for shared mutable state. As long as safe Rust is used for access of this state --- in a hypothetical Rust-only implementation ---, data races are guaranteed by the language to not occur. (However, using unsafe Rust could limit this guarantee.)],
+  [🟢/🟡],
+
+  [2024-42306],
+  [In the `udf` kernel module, when a corrupted block bitmap is detected, allocation is aborted but subsequent allocations will still not check the fail state and instead blindly use the allocation buffer, leading to undefined state. The solution was to use a "verified" bit to check the bitmap for validity.],
+  [This depends: if the "verified" bit existed before the issue was found, but was erroneously not checked, this can be prevented through stricter type modelling in Rust. However, if the case in question was simply not considered during implementation, and the mentioned bitflag was introduced as solution, then this constitutes a typical logic error where not all possible system states are considered, and cannot be prevented by our approach.],
+  [🟡],
+
+  [2024-46695],
+  [A root user on an @NFS client can, under specific circumstances, change security labels on a mounted @NFS file system. This happens because a mandatory permission check was overlooked, which was documented in the contract of the function ```c __vfs_setxattr_noperm()```.],
+  [Our approach would allow to enforce these permission checks as part of the type system, either by a type around ```c __vfs_setxattr_noperm()``` performing them itself, or by only yielding the correct marker types when the permissions are checked.],
   [🟢],
 )
 

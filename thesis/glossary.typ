@@ -49,5 +49,14 @@
     long: "soundness",
     description: "TODO define & quote",
   ),
+  (
+    key: "VFS",
+    long: "Virtual File System",
+    description: "the part of the Linux kernel that abstracts between filesystems and the rest of the system",
+  ),
+  (
+    key: "NFS",
+    long: "Network File System",
+  ),
   // Add more terms
 )
