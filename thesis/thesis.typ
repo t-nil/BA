@@ -104,7 +104,7 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 //
 // TODO stuff aus Praxisbericht/Projektbericht klauen?
 
-// TODO i talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
+// TODO I talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
 
 #figure(
   ```rust
@@ -127,7 +127,19 @@ In languages where we have strict and strong typing /* TODO define */, we can en
   caption: [A new type `NonZeroI32` that represents the idea of a 32-bit integer *guaranteed* to not be zero],
 ) <nonzeroi32_reciprocal>
 
-= Review of similar solutions
+= Related work
+
+// TODO bento (found by @Oikawa2023)
+
+== `rust-fatfs`@Oikawa2023
+
+A Rust reimplementation of the FAT filesystem standard created by Microsoft.
+It is implemented as a kernel module without usage of FUSE.
+Although the authors claim exploring security and safety benefits as motivation, the evaluation focuses on performance, benchmarking the work against the established C kernel module.
+
+== `fuser`
+
+== Rust for Linux@rustforlinux-website
 
 - rust-fatfs
 - fuser
@@ -172,6 +184,8 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 // source: rust unsafe invariants
 // - https://rust-lang.github.io/unsafe-code-guidelines/ => obsolete, out of date?
 // - https://doc.rust-lang.org/nomicon/what-unsafe-does.html => too informal?
+
+// TODO bindgen
 
 Safe @Rust can never (sans compiler errors) cause @UB in the resulting binary program. /* TODO quote */
 In unsafe @Rust, this is not the case; the programing person now has to uphold several invariants to ensure @soundness. /* TODO quote */
