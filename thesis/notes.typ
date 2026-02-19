@@ -60,6 +60,8 @@ sources:
   [🟢],
 )
 
+// FIXME @löhr: schön auch hier auf die lücken im konzept eingehen. was kann mit meinem ansatz nicht gelöst werden (<-> auch future work / conclusion/limitations)
+
 @procfs
 
 *maybe*:
@@ -81,3 +83,5 @@ https://doc.rust-lang.org/1.3.0/std/rt/unwind/.
 #print-glossary(
   glossary-list,
 )
+
+// FIXME: @löhr

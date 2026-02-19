@@ -1,5 +1,8 @@
-// GLOBAL TODOS
+// # GLOBAL TODOS
 // - [] fix glossary keys being displayed when no short variant exists
+// - [] fix "ich/mein/mir/mich"
+// # STYLE
+// @löhr: deutsch passiviert / englisch "we"
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
@@ -41,16 +44,22 @@ One straightforward solution has always been to limit the function domain via do
 
 In languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
 
+// FIXME @löhr: kleiner Überblick über die Arbeit
+
+// HOWTO bei der einleitung jmd vorstellen, der das thema nicht kennt, und eine schöne einführung will.
+
 // MAYBE exkurs über linear types?
 
 // unterschied zur motivation:
 // - "eine ebene drüber, ungenauer"
-// - TODO löhr fragen: brauche ich beides, passt das so?
+// - FIXME löhr fragen: brauche ich beides, passt das so?
+//   - ja, eher "background" nennen
+//   - beides != hauptteil, nur das erklären was auch gebraucht wird
 // - basics erklären: was ist {dateisystem,rust,typsystem,FUSE}?
 
 @bugden2022rustprogramminglanguagesafety
 
-= Motivation
+= Background
 
 
 
@@ -137,6 +146,8 @@ A Rust reimplementation of the FAT filesystem standard created by Microsoft.
 It is implemented as a kernel module without usage of FUSE.
 Although the authors claim exploring security and safety benefits as motivation, the evaluation focuses on performance, benchmarking the work against the established C kernel module.
 
+// FIXME @löhr: explizit auch nennen, was der unterschied zu meiner lösung ist. gerne klarer werden.
+
 == `fuser`
 
 == Rust for Linux@rustforlinux-website
@@ -196,10 +207,10 @@ This makes reviewing the @soundness property of unsafe code easier.
 
 Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
-1) No dereferencing of /* FIXME @dangling */ or /* FIXME @unaligned */ /* FIXME point to `Alignment` */ pointers.
-2) Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
-3) Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
-4) Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one combination of bits that would correspond to a zero and is therefor illegal.
+1. No dereferencing of /* FIXME @dangling */ or /* FIXME @unaligned */ /* FIXME point to `Alignment` */ pointers.
+2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
+3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
+4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one combination of bits that would correspond to a zero and is therefor illegal.
 
 Because @libfuse calls all our callbacks with atleast one C pointer, we have to check these invariants as rigidly as possible before we call into user code, if we want to eliminate them as sources of @UB.
 
@@ -287,6 +298,8 @@ Wrapping the call to user code inside this function ensures that no panic will b
 === read
 
 == Initialization / global state management
+// FIXME löhr: _maybe_ ein zwei sätze für sanftere einführung, abbildungen auch immer gut. aber muss auch nicht / ist klar, dass das nicht überall geht.
+
 - We need to supply a number of C functions that know which user impl to call
 - Possibility: just use data pointer from `libfuse::init`
   - Con: push raw pointers around, prone to corruption
@@ -334,13 +347,14 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 ) <trampoline_fn_signature>
 
 == Type modeling
-// löhr: ist es ok, die unterkapitel nach technischen (Typ-)namen zu benennen, oder soll ich allgemeinere kategorien wählen?
+// FIXME @löhr: ist es ok, die unterkapitel nach technischen (Typ-)namen zu benennen, oder soll ich allgemeinere kategorien wählen?
+// - geht schon, wär vlt schöner was dazuzuschreiben, aber sind halt wirklich so standard dinger
 === `stat`
 - gives basic info about FS entry
 - returned by getattr
 -
 === `fuse_file_info`
-=== FileMode
+=== `FileMode`
 ==== Typed builder
 - question: how do I model type creation?
   - free function: no named parameters, gets unreadable quickly, no optional parameters
@@ -358,7 +372,7 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 - da für jeden einsatzzweck ein anderes pattern optimal sein kann, habe ich mehrere für meine struct(s) implementiert
 // TODO table?
 
-=== OpenFlags
+=== `OpenFlags`
 
 // TODO: add user code call to open, check that the function looks fully functional, then we can better use the solutions from this part.
 // MAYBE explain macro `bitflag_accessor`
@@ -378,6 +392,8 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 == Beispiel-FS `hello2`
 
 = Conclusion
+
+== Limitations
 
 = Future work
 
