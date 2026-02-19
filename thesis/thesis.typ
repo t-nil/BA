@@ -17,7 +17,6 @@
 
 #import "@local/ohm:0.1.0": thesis
 
-
 // requirements:
 // - author - dict{name, student-id}
 // - examinors - dict{first, second}
