@@ -86,7 +86,7 @@ In languages where we have strict and strong typing /* TODO define */, we can en
   - no data races
   - fearless concurrency // <-> data races?
   - error handling
-  - ADTs / modelling complex types
+  - ADTs / modeling complex types
   - generics
   - typestate pattern
 - Unsafe rust
@@ -244,7 +244,7 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
 Rust's native string types (`str`, `String`) exclusively store UTF-8.#cite(<rust-book>, supplement: "ch. 8.2")
 The main kind of strings this library needs to handle are the file paths that filesystem callbacks are called on.
 The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite */
-Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, I chose to /* FIXME stil? */ not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question. /* FIXME stil? */
+Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, we chose to not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question.
 
 === Unwinding across FFI boundaries
 - => is UB
@@ -257,7 +257,7 @@ When a Rust program is compiled with stack unwinding support and a panic is trig
 In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
 Doing so correctly is a non-trivial task and can easily lead to @UB.#cite(<rust-reference-1.92>, supplement: "ch. 14")
 On the other hand, turning unwinding off loses helpful stack traces and debug information when a panic happens.
-I therefore decided to keep unwinding behaviour while preventing any panic from propagating across a FFI boundary.
+We therefore decided to keep unwinding behaviour while preventing any panic from propagating across a FFI boundary.
 
 Every function that is visible to C can potentially be called from an environment where unwinding works differently or not at all.
 Therefore each of those functions must be panic-free.
@@ -360,12 +360,32 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 ) <trampoline_fn_signature>
 
 == Type modeling
-// FIXME @löhr: ist es ok, die unterkapitel nach technischen (Typ-)namen zu benennen, oder soll ich allgemeinere kategorien wählen?
+// _FIXME _löhr: ist es ok, die unterkapitel nach technischen (Typ-)namen zu benennen, oder soll ich allgemeinere kategorien wählen?
 // - geht schon, wär vlt schöner was dazuzuschreiben, aber sind halt wirklich so standard dinger
+
+Creating thin high-level representations of the low-level data types that make up the @libfuse API, that nonetheless verify as many correctness properties as possible, is the main focus of this project.
+Where feasible, these properties are checked during compile-time, which gives the additional advantage of not impacting runtime performance.
+Otherwise, runtime checks are emitted to still provide correctness to a very high degree.
+/* FIXME @ask auch in "future work"? */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
+Due to the goals of this work, and time constraints, this was mostly skipped.
+
+// FIXME @ask genug?
+
 === `stat`
-- gives basic info about FS entry
-- returned by getattr
--
+
+The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
+This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- it's permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory, or opening a file.
+@stat.3type_manpage
+
+Our attempt at modeling lead us to break down the struct into smaller parts, which require more attention:
+- `FileType`, which is an enum flag of several possible values that have to specifically match magic IDs from the corresponding C header.
+- `FilePermissions`, which are stored as a positive integer and usually displayed as an octal number in the range of `0o000` to `0o777` and represent restrictions on reading, writing and executing the underlying entry.
+- three bitflags (`setuid`, `setgid`, and `vtx_flag`), that are context-dependent and enable additional features. These are stored inside the permissions integer in the underlying Unix APIs.
+
+Other fields, like file size and modification time, were not deemed as interesting, since it can be correct for them to assume every valid bit pattern the underlying C type can represent, and checking the correctness semantically would introduce significant runtime overhead. E.g. validating modification time would have to detect modification in arbitrary files, and file size is an attribute that the wrapper has no insight into as per abstraction.
+
+// FIXME @ask explizit schreiben warum die drei davor aber interessant waren.
+
 === `fuse_file_info`
 === `FileMode`
 ==== Typed builder
@@ -402,11 +422,41 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 @cwe-top25-2025
 
 // hier CVEs auswerten, vlt oben in Methodology schon konkret auflisten
-== Beispiel-FS `hello2`
+== A prototype filesystem implementation: `hello2`
+// FIXME @ask geht das in die richtige richtung?
+
+To test our wrapper library, we created a minimal filesystem using it. /* FIXME @ask duplicate zu: libfuse implt auch nur 3? */
+It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem.#cite(<libfuse_docs>, supplement: "/example_2hello_8c.html")
+
+This filesystem is read-only, since that narrows down the functionality we have to implement.
+Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content. The following example shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.@hello2_file_table
+
+Besides some boilerplate to iterate over files in a folder, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
+The implementations were straight-forward and simple, which which was one of @libfuse_wrapper. Most low-level details and pitfalls were abstracted away.
+One aspect that required a proportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
+This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
+
+// FIXME @ask more?
+
+#figure(
+  ```rust
+  static FILES: LazyLock<[FileEntry; 6]> = LazyLock::new(|| {
+      [
+          ("/pid", Box::new(|| std::process::id().to_string())),
+          (
+              "/time",
+              Box::new(|| format!("{}", chrono::Local::now().format("%c"))),
+          ),
+      // …
+  ```,
+  caption: [A global file table for our `hello2` example filesystem],
+) <hello2_file_table>
 
 = Conclusion
 
 == Limitations
+
+// TODO more low-level, still as much safety?
 
 = Future work
 

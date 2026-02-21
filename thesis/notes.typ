@@ -105,7 +105,7 @@ maybe:
 
   [2024-47699],
   [A potential null pointer dereference was found inside `nilfs` when dealing with a corrupted filesystem.],
-  [While unsafe Rust does not prevent accidental null pointer deref's, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
+  [While unsafe Rust does not prevent accidental null pointer derefs, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
   [🟢],
 )
 

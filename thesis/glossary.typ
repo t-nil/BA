@@ -28,6 +28,10 @@
     description: "TODO",
   ),
   (
+    key: "POSIX",
+    long: "the POSIX standard",
+  ),
+  (
     key: "procfs",
     short: "`procfs`",
     long: "the `procfs` filesystem",
