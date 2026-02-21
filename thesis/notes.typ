@@ -87,6 +87,26 @@ maybe:
   [A root user on an @NFS client can, under specific circumstances, change security labels on a mounted @NFS file system. This happens because a mandatory permission check was overlooked, which was documented in the contract of the function ```c __vfs_setxattr_noperm()```.],
   [Our approach would allow to enforce these permission checks as part of the type system, either by a type around ```c __vfs_setxattr_noperm()``` performing them itself, or by only yielding the correct marker types when the permissions are checked.],
   [🟢],
+
+  [2025-38663],
+  [A sanity check for invalid file types was missing from the `nilfs2` module.],
+  [As concretely shown within the ```rust FileType``` enum in our wrapper library, construction of the enum from an invalid file type ID would have automatically resulted in an error.],
+  [🟢],
+
+  [2023-52590],
+  [Due to an interaction with @VFS, renaming a directory on `ocfs2` could result in filesystem corruption, because a lock was not properly aquired.],
+  [Although, in theory, this would be part of the @VFS contract that we could try to encode in the type system, this looks like a logic error as result of a complex interaction of modules. This kind bugs are notoriously hard to avoid completely by software tooling, because they require a detailed high-level understanding of components and contracts that is usually very hard to express in a machine-understandable way.],
+  [🟡/🔴],
+
+  [2024-50202],
+  [In `nilfs2`, errors were ignored in a procedure searching for directory entries. This could lead to a hang later on when the error are rediscovered.],
+  [Error handling is one of Rust's strengths, because they are wrapped into the return type and the language requires the programmer to give explicit instructions on how to react to the error case. This is different in C, where errors are usually hidden away in global state, or --- while part of return value --- there is no mechanism to force explicit handling.],
+  [🟢],
+
+  [2024-47699],
+  [A potential null pointer dereference was found inside `nilfs` when dealing with a corrupted filesystem.],
+  [While unsafe Rust does not prevent accidental null pointer deref's, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
+  [🟢],
 )
 
 // FIXME @löhr: schön auch hier auf die lücken im konzept eingehen. was kann mit meinem ansatz nicht gelöst werden (<-> auch future work / conclusion/limitations)
