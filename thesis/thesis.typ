@@ -1,10 +1,11 @@
 // # GLOBAL TODOS
-// - [] fix glossary keys being displayed when no short variant exists
-// - [] fix "ich/mein/mir/mich"
+// - [x] fix glossary keys being displayed when no short variant exists
+// - [x] fix "ich/mein/mir/mich"
 // # STYLE
 // @löhr: deutsch passiviert / englisch "we"
 // - https://academics.umw.edu/swc/files/2024/02/IEEE-Formatting-Guidelines.pdf
 //   - capitalize headers
+// - [ ] glossary ausformulieren
 //
 // # FINAL REFACTOR
 // - grep for glossary/abbrev instances
@@ -14,7 +15,10 @@
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
 // TODO use fletcher
-// @löhr: github links, doku etc.: muss das in die bibliographie rein oder reichen fußnoten?
+// _löhr: github links, doku etc.: muss das in die bibliographie rein oder reichen fußnoten?
+//  - wenn inhalt bezogen wird, in die bib.
+// @löhr:
+// -
 
 #import "@preview/glossarium:0.5.10": gls, glspl, make-glossary, print-glossary, register-glossary
 #show: make-glossary
@@ -34,6 +38,7 @@
   thesis(
     author: (name: "Florian Meißner", student-id: "3210376"),
     examinors: (first: "Prof. Dr. Hans Löhr", second: "Prof. Dr. Michael Zapf"),
+    show_chapters: true,
   )[#rest]
 }
 
@@ -211,7 +216,7 @@ In unsafe @Rust, this is not the case; the programmer now has to uphold several 
 In the C standard, where behavior in any situation not explicitly defined by the language standard is implicitly “undefined“, Rust limits these invariants to a set of specific, well-documented cases.
 This makes reviewing the @soundness property of unsafe code easier.
 
-=== Pointers
+=== Pointers <ch_pointers>
 
 // TODO shorthand for u/i8, u/i16.
 // EXTRA what are pointers? stefan "abstraktion über adressen? 'obermenge von references'"
@@ -239,14 +244,14 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
 4. This only matters when primitive C-style casts or ```rust mem::transmute()``` /* todo explain? define? quote? */ are used, as otherwise the Rust typesystem protects us from writing values of the wrong type, even inside unsafe blocks.
   Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
 
-=== Strings and Unicode
+=== Strings and Unicode <ch_strings_unicode>
 
 Rust's native string types (`str`, `String`) exclusively store UTF-8.#cite(<rust-book>, supplement: "ch. 8.2")
 The main kind of strings this library needs to handle are the file paths that filesystem callbacks are called on.
 The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite */
 Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, we chose to not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question.
 
-=== Unwinding across FFI boundaries
+=== Unwinding across FFI boundaries <ch_unwind>
 - => is UB
 - have to wrap every possible panic point inside ```rust catch_unwind()```
 - not provably panic-free with just compiler
@@ -257,7 +262,7 @@ When a Rust program is compiled with stack unwinding support and a panic is trig
 In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
 Doing so correctly is a non-trivial task and can easily lead to @UB.#cite(<rust-reference-1.92>, supplement: "ch. 14")
 On the other hand, turning unwinding off loses helpful stack traces and debug information when a panic happens.
-We therefore decided to keep unwinding behaviour while preventing any panic from propagating across a FFI boundary.
+We therefore decided to keep unwinding behaviour while preventing any panic from propagating across an FFI boundary.
 
 Every function that is visible to C can potentially be called from an environment where unwinding works differently or not at all.
 Therefore each of those functions must be panic-free.
@@ -298,19 +303,61 @@ Wrapping the call to user code inside this function ensures that no panic will b
 ) <catch_unwind>
 
 == FUSE operations
-- these 4 functions seem to be the bare minimum for a R/O filesystem (see libfuse example `hello`)
-- open can be a noop
+
+The @libfuse operations struct contains 43 callbacks to implement, most of which are optional and not needed for a filesystem to work properly.
+If we can forgo modifying the state, and create a read-only filesystem, the number of required calls can be brought down to 3. #cite(<libfuse_docs>, supplement: "p. structfuse__operations.html")#cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html")
+
+Some of the operations which are superflous for our experiments include:
+- `lock`/`flock`: These are used for file locking, enabling safe concurrent access, and locking primitives across processes. Since our filesystem is readonly, no locking is needed.
+- `ioctl`: Needed for special I/O commands, when simple seeking to byte offsets, and reading/writing from them is not sufficient. Examples include ejecting CD-ROM or rewinding data tape. Not needed for our general-purpose minimal filesystem.
+- `write`/`sync`/`fsync`: These are used for writing data out, and to force flushing buffers to the underlying storage. Irrelevant in a read-only filesystem.
+- `mkdir`/`link`/`create`/`mknod`/`unlink`/`rmdir`: Creating and deleting of entries of various types. Not relevant for a read-only filesystem.
+
+All implemented operations check their pointer arguments for validity, with the methods discussed earlier (@ch_pointers).
+The obligatory `path` argument, that identifies the entry to operate on, is converted from a C string into native Rust, and also checked for validity (@ch_strings_unicode).
+After basic correctness of inputs has been ensured, the code tries to load the filesystem object from the global registry.
+This is done to minimize unneccessary work when some inputs are not sound.
+The load could fail, e.g. in case the user code triggered a panic earlier, or due to a bug in the wrapper library. This is also handled (@ch_init).
+
+After that, some operation-specific instructions are executed, and a context is set up to call into user code without triggering panic unwinding (@ch_unwind).
+@libfuse datatypes are converted to our Rust representations, adding the implicit safety checks.
+After the user code has been executed, the results are converted back into @libfuse types, and success of the operation is signaled up the stacks.
+
+Next up is a detailed description of the required calls, accompanied with their respective C and Rust signatures.
 
 === getattr
-- "bread and butter" call, is the first one executed on all filesystem paths, lets user decide how to continue (readdir on dirs, read/open on files e.g.)
--
+
+```c int(* 	getattr )(const char *, struct stat *, struct fuse_file_info *fi)```
+```rust pub unsafe extern "C" fn getattr<FS: Filesystem>(
+    path: *const i8,
+    stat_out: *mut libfuse::stat,
+    _fuse_file_info_out: *mut libfuse::fuse_file_info,
+) -> i32
+```
+
+This provides information about a filesystem entry, be it a file, a directory, a symbolic link, or some sort of special device. Without this call, no metadata could be queried about our filesystem, and its usefulness would be severely limited.
+
+This function, as do all of the callbacks described here, takes a path in form of a C string to describe the filesystem object to query. It also takes two additional parameters: a `stat` struct as output, to be filled with the resulting metadata (#ref(<ch_stat>)), and an optional `fuse_file_info`, which may be set when the file in question is currently opened, and can provide additional metadata and FUSE settings if set.
+
+We chose to mostly ignore the `fuse_file_info` for now, as it is only used under specific circumstances, and even then provides only very specialized attributes that would go beyond the scope of this exploration. The other two parameters are checked as per concept.
+
+It's the users job to create an instance of `struct Stat` and pass it back to us. This @newtype_struct contains a valid `stat` fuse struct inside, which is needed as return value written into the output pointer argument of same name, and can trivially convert to one.
 
 === readdir
+
+This function's job is, given a directory as path, provide a list of child entries, enabling directory content listing (as e.g. in the `ls` command). An offset can be provided to support partial listings over multiple calls, however we chose to ignore this, as is allowed in the documentation.#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html")
+
+There exists an alternative, more complex mode, which we could have chosen to support: Implement the additional `opendir` operation to open the directory to enumerate as a file descriptor. Then, `readdir` is called on the active file descriptor, providing a view of the directory that is guaranteed to be the same as when `opendir` was called. This was deemed unneccessary to explore the given research questions, and skipped subsequently.
+
+// FIXME filler_fn
+
+// FIXME also: add code snippets to this and `getattr`
+
 === open
 === read
 
 // EXTRA split into two? or one sub the other?
-== Initialization and Global State Management
+== Initialization and Global State Management <ch_init>
 // FIXME löhr: _maybe_ ein zwei sätze für sanftere einführung, abbildungen auch immer gut. aber muss auch nicht / ist klar, dass das nicht überall geht.
 
 - We need to supply a number of C functions that know which user impl to call
@@ -365,26 +412,24 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 
 Creating thin high-level representations of the low-level data types that make up the @libfuse API, that nonetheless verify as many correctness properties as possible, is the main focus of this project.
 Where feasible, these properties are checked during compile-time, which gives the additional advantage of not impacting runtime performance.
-Otherwise, runtime checks are emitted to still provide correctness to a very high degree.
-/* FIXME @ask auch in "future work"? */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
+Otherwise, runtime checks are emitted to still provide correctness, but at the disadvantage of producing runtime errors instead of halting compilation, which increases development cost. /* MAYBE cite */
+/* FIXME @end auch in "future work"? stefan: prob zu klein, hier lassen. */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
 Due to the goals of this work, and time constraints, this was mostly skipped.
 
 // FIXME @ask genug?
 
-=== `stat`
+=== `stat` <ch_stat>
 
 The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
 This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- it's permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory, or opening a file.
 @stat.3type_manpage
 
-Our attempt at modeling lead us to break down the struct into smaller parts, which require more attention:
+Our attempt at modeling lead us to break down the struct into smaller parts, which require more attention: /* FIXME kurzes statement, warum die gut geeignet sind. bissi expliziter halt. zb: es gibt bestimmte komponenten, da macht es sinn die extra zu behandeln, weil gut zu prüfen bla etc…. eigl in extra absatz */
 - `FileType`, which is an enum flag of several possible values that have to specifically match magic IDs from the corresponding C header.
 - `FilePermissions`, which are stored as a positive integer and usually displayed as an octal number in the range of `0o000` to `0o777` and represent restrictions on reading, writing and executing the underlying entry.
 - three bitflags (`setuid`, `setgid`, and `vtx_flag`), that are context-dependent and enable additional features. These are stored inside the permissions integer in the underlying Unix APIs.
 
-Other fields, like file size and modification time, were not deemed as interesting, since it can be correct for them to assume every valid bit pattern the underlying C type can represent, and checking the correctness semantically would introduce significant runtime overhead. E.g. validating modification time would have to detect modification in arbitrary files, and file size is an attribute that the wrapper has no insight into as per abstraction.
-
-// FIXME @ask explizit schreiben warum die drei davor aber interessant waren.
+Other fields, like file size and modification time, were not deemed as interesting, since it can be correct for them to assume every valid bit pattern the underlying C type can represent, and checking the correctness semantically would introduce significant runtime overhead. E.g. validating modification time would have to detect modification in arbitrary files, and file size is an attribute that the wrapper has no insight into. Further insight into this problem is provided in #ref(<ch_prototype>).
 
 === `fuse_file_info`
 === `FileMode`
@@ -417,19 +462,21 @@ Other fields, like file size and modification time, were not deemed as interesti
 
 = Evaluation
 
-
-
 @cwe-top25-2025
 
 // hier CVEs auswerten, vlt oben in Methodology schon konkret auflisten
-== A prototype filesystem implementation: `hello2`
+== A prototype filesystem: `hello2` <ch_prototype>
 // FIXME @ask geht das in die richtige richtung?
+// - stefan: vlt noch mehr, alles was ich gemacht hab geht in die richtige richtung.
 
-To test our wrapper library, we created a minimal filesystem using it. /* FIXME @ask duplicate zu: libfuse implt auch nur 3? */
-It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem.#cite(<libfuse_docs>, supplement: "/example_2hello_8c.html")
+To test our wrapper library, we created a minimal filesystem using it.
+It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem.#cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html")
 
 This filesystem is read-only, since that narrows down the functionality we have to implement.
-Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content. The following example shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.@hello2_file_table
+Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content. The following example (@hello2_file_table) shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.
+This dynamic property of our test filesystem allows us increase confidence in our abstractions, by providing less stability on which to accidentally depend.
+
+Additional logic was deemed necessary to be able to build a hierarchical recursive folder data structure from the provided file table, which is needed for listing directory contents. Implementing this keeps the file table itself clean and readable, and accelerates development and testing.
 
 Besides some boilerplate to iterate over files in a folder, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
 The implementations were straight-forward and simple, which which was one of @libfuse_wrapper. Most low-level details and pitfalls were abstracted away.

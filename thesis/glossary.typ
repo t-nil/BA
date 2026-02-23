@@ -4,27 +4,25 @@
   (
     key: "trampoline_function",
     long: "trampoline function",
-    description: "TODO",
+    description: "A wrapper function which has the job of being a proxy for another, binary-incompatible function, setting up the correct environment and converting the call. In our case, trampoline functions are ones that have the correct ABI and signature to be passed as FUSE operations, and, when executed, redirect execution flow into Rust code providing the actual filesystem functionality.",
   ),
   (
     key: "libfuse_wrapper",
-    long: "the libfuse wrapper",
-    description: "TODO - our lil' project",
+    short: "our `libfuse` wrapper",
   ),
   (
     key: "libfuse",
-    long: "TODO libfuse",
-    description: "TODO",
+    short: "`libfuse`",
+    long: "the `libfuse` C library",
   ),
   (
     key: "UB",
-    short: "UB",
     long: "Undefined Behaviour",
     description: "TODO",
   ),
   (
     key: "newtype_struct",
-    long: "newtype struct",
+    short: "newtype struct",
     description: "TODO",
   ),
   (
@@ -45,12 +43,12 @@
   ),
   (
     key: "Rust",
-    long: "Rust",
+    short: "Rust",
     description: "TODO",
   ),
   (
     key: "soundness",
-    long: "soundness",
+    short: "soundness",
     description: "TODO define & quote",
   ),
   (
