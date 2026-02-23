@@ -349,12 +349,77 @@ This function's job is, given a directory as path, provide a list of child entri
 
 There exists an alternative, more complex mode, which we could have chosen to support: Implement the additional `opendir` operation to open the directory to enumerate as a file descriptor. Then, `readdir` is called on the active file descriptor, providing a view of the directory that is guaranteed to be the same as when `opendir` was called. This was deemed unneccessary to explore the given research questions, and skipped subsequently.
 
-// FIXME filler_fn
+The API is designed, so that the `readdir` implementation doesn't just return, or write into, an array of entries.
+Instead, a function pointer to a "filler" function is provided.
+Our operation has to call this function for every entry.
+Some of the filler functions parameters correspond to entry metadata, others, like a pointer to an opaque data buffer, have to be forwarded.@readdir_filler_fn#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html")
+
+/* FIXME @ask statt dem ersten und letzten codeblock: 1 zeile comment "// converting string" "// checking error". for brevity? */
+#figure(
+  ```rust
+  // ...
+  for entry in entries {
+      let entry_as_c_string = try_errno!(CString::new(entry.clone()).map_err(|e| {
+          (
+              format!("converting dir entry '{entry}' into a C string: {e:#}"),
+              Errno::EIO,
+          )
+      }));
+      debug!(?path, "filling entry '{entry}'");
+      let fill_result = unsafe {
+          filler_fn(
+              data_ptr,
+              entry_as_c_string.as_ptr(),
+              ptr::null(), /* setting `stat` struct to NULL, as per `hello.c` */
+              0,           /*: offset */
+              libfuse::fuse_fill_dir_flags_FUSE_FILL_DIR_DEFAULTS,
+          )
+      };
+
+      if fill_result != 0 {
+          bail_errno!(
+              format!("filler_fn returned non-zero for '{entry}': {fill_result}"),
+              Errno::EIO
+          );
+      }
+  }
+  // ...
+  ```,
+  caption: [Excerpt from the `readdir` trampoline, passing the Rust vector of directory entries into the C filler function.],
+) <readdir_filler_fn>
 
 // FIXME also: add code snippets to this and `getattr`
 
-=== open
 === read
+
+The `read` operation provides us with the means to fetch the content of files, complementing our set of operations to obtain a usable, if minimal, filesystem.
+It takes as parameters a size and an offset, determining the range of content to be read, as well as a C character array to store the data in.
+Again, an optional `fuse_file_info` struct pointer is provided, which we can ignore.
+
+Dealing with the size and offset parameters provided a challenge. While the requested size parameter is of type `size_t`, which is usually defined as 64-bit integer on modern systems to be used for indexing memory, we have to return the actual amount of read bytes as signed 32-bit integer.
+As such, we can only signal successful reads of up to $$2^31 - 1$$ bytes.
+Further investigation showed that maximum read size is limited by the Linux kernel#cite(<read.2_manpage>), so the limitation in the API seems reasonable, assuming other operating systems impose similar limits.
+We therefore have to carefully check if the input parameter is inside the allowed range, and convert between the respective integer types, in addition to the usual checks.
+Furthermore, Rust does not provide a native method of specifying an upper bound for a vector length as part of the type signature, so manual checks are required after the user code returns the data. Dependent types or refinement types would be a possible solution, but are not available in Rust aside from research projects. /* FIXME sources */
+
+If the size checks pass, a pointer copy is issued, for which Rust STD provides a function.
+Because we use `unsafe`, we documented the assumptions made and invariants we checked, as is common practice.@read_copy_nonoverlapping
+
+#figure(
+  ```rust
+    // Safety: we checked that the buffer is big enough to hold the returned data (if `size` argument was correct).
+    //         Also we checked that the pointer is aligned and non-null.
+    //         Also, the areas cannot overlap, since the Rust vector has reserved its own memory.
+    unsafe {
+        ptr::copy_nonoverlapping(
+            result.content.as_ptr(),
+            buf as *mut u8,
+            result.content.len(),
+        );
+    }
+  ```,
+  caption: [Excerpt from the `read` trampoline, copying the read result into the provided C buffer.],
+) <read_copy_nonoverlapping>
 
 // EXTRA split into two? or one sub the other?
 == Initialization and Global State Management <ch_init>
@@ -413,7 +478,7 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 Creating thin high-level representations of the low-level data types that make up the @libfuse API, that nonetheless verify as many correctness properties as possible, is the main focus of this project.
 Where feasible, these properties are checked during compile-time, which gives the additional advantage of not impacting runtime performance.
 Otherwise, runtime checks are emitted to still provide correctness, but at the disadvantage of producing runtime errors instead of halting compilation, which increases development cost. /* MAYBE cite */
-/* FIXME @end auch in "future work"? stefan: prob zu klein, hier lassen. */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
+/* _FIXME @end auch in "future work"? stefan: prob zu klein, hier lassen. */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
 Due to the goals of this work, and time constraints, this was mostly skipped.
 
 // FIXME @ask genug?
@@ -457,6 +522,9 @@ Other fields, like file size and modification time, were not deemed as interesti
 
 == Error handling
 // allg: conversion between rust `Result<>` and errno
+
+While @libfuse and Rust both return an error value 
+
 // `{try,bail,ensure}_errno!()`
 // Verweis auf `panics/unwind across FFI`
 

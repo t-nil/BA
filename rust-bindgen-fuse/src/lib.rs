@@ -604,6 +604,7 @@ pub unsafe extern "C" fn read<FS: Filesystem>(
 
     // Safety: we checked that the buffer is big enough to hold the returned data (if `size` argument was correct).
     //         Also we checked that the pointer is aligned and non-null.
+    //         Also, the areas cannot overlap, since the Rust vector has reserved its own memory.
     unsafe {
         ptr::copy_nonoverlapping(
             result.content.as_ptr(),
