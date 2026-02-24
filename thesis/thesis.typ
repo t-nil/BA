@@ -421,8 +421,8 @@ Because we use `unsafe`, we documented the assumptions made and invariants we ch
   caption: [Excerpt from the `read` trampoline, copying the read result into the provided C buffer.],
 ) <read_copy_nonoverlapping>
 
-// EXTRA split into two? or one sub the other?
 == Initialization and Global State Management <ch_init>
+// EXTRA split into two? or one sub the other?
 // FIXME löhr: _maybe_ ein zwei sätze für sanftere einführung, abbildungen auch immer gut. aber muss auch nicht / ist klar, dass das nicht überall geht.
 
 - We need to supply a number of C functions that know which user impl to call
@@ -483,6 +483,152 @@ Due to the goals of this work, and time constraints, this was mostly skipped.
 
 // FIXME @ask genug?
 
+=== Typed builder
+
+A pattern that is often encountered in Rust is a _builder_.
+It tries to solve the problem of value creation, where, for big types, many values must be provided, some of which are interdependant or introduce combined constraints, and some are only available at different times.
+
+There are multiple ways to construct a value in Rust:
+
+- *Initializing a raw struct*: If the struct has only public fields, directly constructing it is possible.
+  As downsides, validation of the value as a whole is not possible, since a struct can always be legally constructed from legal values of all its elements, so any checks must be performed through the types of its members.
+  Also, staggered initialization is not possible, since at construction point, every value has to be provided. It is possible to let construction use default values for some members, but this doesn't equal partial initialization, since it is not fundamentally possible to tell an uninitialized value from a valid value equalling the default value of the field.
+  Thus, this loses some type safety.
+- *Constructor function*: Rust doesn't have constructors as language constructs, as opposed to e.g. C++.
+  Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust also doesn't allow function overloading.
+  Paired with lack of default parameter values, this makes writing constructors rather rigid, and is not substantially different to using raw structs.
+  No staggered initialization is possible, as with a struct initialization, but interdependent validity checks can be performed;
+  with the caveat, that when a type provides multiple constructors, all of them must duplicate the verification logic or use a private shared constructor that centralizes the checks.
+  This is also manual, and can be overlooked, and the probability of oversight increases with the count of constructors.
+- *Struct as constructor parameter*:
+  An elegant combination of the two concepts above is to use a dedicated initialization struct, that is either passed to a constructor or can be cast to the target type.
+  It acts as a sort of dictionary, or list of named parameters.
+  This emulates named arguments and also works with private fields, since the target type construction is hidden from the user.I
+  It still doesn't solve staggered construction, for the same reasons as stated above.
+  But one could maybe imagine using this pattern multiple times, where each initialization struct sets some parameters and generates the next stage of initialization via an opaque intermediate type, thus providing multiple phases of initialization.
+  Implementing this from hand would be complex and error-prone, since every combination of initialized-ness has to be coded explicitly, which leads to $$ n! $$ cases, where $$n$$ equals the number of initialization parameters.
+- *Typestate builder pattern*: This is where Rusts strengths come in to play.
+  Rust provides a rich macro system, enabling the generation of the boilerplate code that is needed for such a multi-stage "build" of a value.
+  The pattern described here is named "typestate builder" pattern, or "typed builder" pattern, and is one variant of the more general builder pattern.
+  It annotates the target struct, generating a builder struct which allows to set every parameter by itself.
+  Required parameters must be set exactly once, optional parameters zero or one times.
+  This detects possible bugs as cases, where a value is forgotten to be set, or is set too many times, overwriting the previous choice.
+  Additional checks can be added to every member and the struct as a whole, in the form of closure predicates.
+  Syntactic sugar for flags is supported to be able to write ```rust boolean_flag()``` to enable a flag, and omission of any call to leave it of, instead of ```rust set_boolean_flag(val: bool)```.
+  This improves readability and provides additional correctness checks.
+  Also, only the validity closures live in runtime; the basic correctness checks of every field being set the right amount of times are modeled within the type system, leading to compilation errors when disregarded, which is one of our goals.
+
+  The implementation of this builder pattern creates a utility intermediate type for every possible combination of whether a type has been set. An example would be a builder for a struct ```rust struct Point { x: f32, y: f32 }```, which represents a point on a cartesian coordinate system. A manual implementation of a builder could look like this:
+
+#figure(
+  ```rust
+  struct PointWithXSet { x: f32 }
+  struct PointWithYSet { y: f32 }
+  struct PointWithNothingSet {}
+
+  impl PointWithNothingSet {
+    pub fn set_x(x: f32) -> PointWithXSet { /* ... */ }
+    pub fn set_y(y: f32) -> PointWithYSet { /* ... */ }
+  }
+
+  impl PointWithXSet {
+    pub fn set_y(y: f32) -> Point { /* ... */ }
+  }
+
+  impl PointWithYSet {
+    pub fn set_x(x: f32) -> Point { /* ... */ }
+  }
+
+  impl Point {
+    pub fn build() -> PointWithNothingSet { /* ... */ }
+  }
+
+  ```,
+  caption: [FIXME.],
+) <typestate_builder_manual_1>
+
+In this case, the type system makes it invalid to set an x or y coordinate multiple times, or forget to set it.
+There are only two possible ways to obtain a value of type ```rust Point```:
+
+- calling ```rust Point::build().set_x().set_y()```
+- calling ```rust Point::build().set_y().set_x()```
+
+Therefore we can ensure proper initialization of the point value.
+
+Another way of modeling this pattern uses generics. @typestate_builder_manual_2 shows such an approach.
+
+#figure(
+  ```rust
+  pub struct PointBuilder<State: PointBuilderState> { state: State };
+
+  trait PointBuilderState {}
+  struct NothingSet;
+  impl PointBuilderState for NothingSet {};
+  struct XSet { x: f32 };
+  impl PointBuilderState for XSet {};
+  struct YSet { y: f32 };
+  impl PointBuilderState for YSet {};
+
+  impl Point {
+    pub fn build() -> PointBuilder<NothingSet> { /* ... */ }
+  }
+
+  impl PointBuilder<NothingSet> {
+    pub fn set_x(x: f32) -> PointBuilder<XSet> { /* ... */ }
+    pub fn set_y(y: f32) -> PointBuilder<YSet> { /* ... */ }
+  }
+
+  impl PointBuilder<XSet> {
+    pub fn set_y(y: f32) -> Point { /* ... */ }
+  }
+
+  impl PointBuilder<YSet> {
+    pub fn set_x(x: f32) -> Point { /* ... */ }
+  }
+
+  ```,
+  caption: [FIXME.],
+) <typestate_builder_manual_2>
+
+// TODO more theoretical bla on state machines / DEAs
+On closer inspection this pattern bears resemblance of a state machine, where states are marker structs --- structs with no associated data fields --- that implement a marker trate --- analogously, a trait without associated items ---.
+Methods on these concrete types, which after monomorphisation /* FIXME quote/explain */ are the ```rust PointBuilder``` with a concrete state as type parameter, that return a ```rust PointBuilder``` with a different state type, represent transitions between those states.
+This is intuitive because, as a transition can only be applied to the start state and results in the end state of that transition, methods on a type can only be run on an existing value of that type, and always produce the return value.
+
+The implementation using generics has a few advantages:
+Since all intermediate types are specializations of a general builder type, there can be methods on the general builder type, which correspond to transitions on any starting state. /* FIXME macht das hier sinn? überhaupt nochmal typestate<->builder überdenken */
+
+While a typestate builder has many advantages in statical correctness, conditional branches can be difficult to handle.
+That is because every state of the builder is effectively a different type, and Rust doesn't allow items to have different types depending on a branch.
+This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value /* FIXME example */.
+Runtime builders don't have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
+
+Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known, and flexibility with runtime checks, when it's not.
+
+
+@typed_builder_docs
+
+
+
+
+// - question: how do I model type creation?
+//   - free function: no named parameters, gets unreadable quickly, no optional parameters
+//   - struct init: grundsätzlich recht sicher, aber
+//     - pro: parameter sind benannt
+//     - manche felder mandatory, manche optional: geht nicht
+//     - struct muss default trait implementieren, dann sind alle felder basically optional, und es ist möglich, potentiell invalide objekte zu erstellen
+//     - keine schicken auto-converts und transformations, bounds checking etc.
+//   - "normal" runtime builder
+//     - pro: sehr flexibel, ergonomisch
+//     - con: wird ein mandatory feld vergessen, gibts erst zur runtime nen fehler
+//   - typed builder:
+//     - pro: flexibilität und mächtigkeit eines runtime builders, trotzdem werden fehler schon zur compilezeit gefangen
+//     - con: state ist im typ encodiert, macht es schwer bis unmöglich (type erasure stunts), z.b. in einer if-bedingung konditional ein feld zu setzen
+// - da für jeden einsatzzweck ein anderes pattern optimal sein kann, habe ich mehrere für meine struct(s) implementiert
+// TODO table?
+
+
+
 === `stat` <ch_stat>
 
 The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
@@ -497,23 +643,18 @@ Our attempt at modeling lead us to break down the struct into smaller parts, whi
 Other fields, like file size and modification time, were not deemed as interesting, since it can be correct for them to assume every valid bit pattern the underlying C type can represent, and checking the correctness semantically would introduce significant runtime overhead. E.g. validating modification time would have to detect modification in arbitrary files, and file size is an attribute that the wrapper has no insight into. Further insight into this problem is provided in #ref(<ch_prototype>).
 
 === `fuse_file_info`
+
+This type, although a parameter to every operation implemented, is optional in every case, and seldomly used.
+In fact, due to the limited nature of our experiment, because we don't work with `open` and file descriptors, it can be assumed that the struct never be initialized.
+Therefore, modeling was skipped.
+This does not mean that `fuse_file_info` is not a good candidate for our methodology.
+To the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which atleast provide a simple safeguard against erroneous bit operations.
+Additionally, some entries influence further behaviour of the filesystem and could probably be used to implement more correctness checks.
+
 === `FileMode`
-==== Typed builder
-- question: how do I model type creation?
-  - free function: no named parameters, gets unreadable quickly, no optional parameters
-  - struct init: grundsätzlich recht sicher, aber
-    - pro: parameter sind benannt
-    - manche felder mandatory, manche optional: geht nicht
-    - struct muss default trait implementieren, dann sind alle felder basically optional, und es ist möglich, potentiell invalide objekte zu erstellen
-    - keine schicken auto-converts und transformations, bounds checking etc.
-  - "normal" runtime builder
-    - pro: sehr flexibel, ergonomisch
-    - con: wird ein mandatory feld vergessen, gibts erst zur runtime nen fehler
-  - typed builder:
-    - pro: flexibilität und mächtigkeit eines runtime builders, trotzdem werden fehler schon zur compilezeit gefangen
-    - con: state ist im typ encodiert, macht es schwer bis unmöglich (type erasure stunts), z.b. in einer if-bedingung konditional ein feld zu setzen
-- da für jeden einsatzzweck ein anderes pattern optimal sein kann, habe ich mehrere für meine struct(s) implementiert
-// TODO table?
+
+`FileMode` is an abstraction that @libfuse provides, that encapsulates both file type and the permission mask.
+To stay close to the lower level, we opted to keep this encapsulation.
 
 === `OpenFlags`
 
@@ -523,7 +664,7 @@ Other fields, like file size and modification time, were not deemed as interesti
 == Error handling
 // allg: conversion between rust `Result<>` and errno
 
-While @libfuse and Rust both return an error value 
+While @libfuse and Rust both return an error value
 
 // `{try,bail,ensure}_errno!()`
 // Verweis auf `panics/unwind across FFI`
@@ -574,8 +715,6 @@ This could be made possible as an additional opt-in API, but would almost certai
 // TODO more low-level, still as much safety?
 
 = Future work
-
-
 
 #bibliography("bibliography.bib", style: "ieee")
 
