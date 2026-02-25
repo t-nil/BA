@@ -25,9 +25,6 @@
 #import "glossary.typ": glossary-list
 #register-glossary(glossary-list)
 
-// FIXME schau dir short/long/blah nochmal an, anscheinend werden bei nichtvorhandensein von short die keywords wiederholt oder so
-
-
 #import "@local/ohm:0.1.0": thesis
 
 // requirements:
@@ -48,14 +45,50 @@
 - but still many big projects (linux etc.) are written in C
 
 
-Since the beginning of programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
+Since the beginning of computer programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
 For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
 
-One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type. Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. This discrepancy,between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
+One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type (@c_reciprocal). Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. For example, special behavior could be introduced to handle the undefined case by printing out errors. This discrepancy, between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
+
+#figure(
+  ```c
+  // `n` CANNOT BE ZERO!
+  double reciprocal(int n) {
+    if (n == 0) {
+      crash(); // we warned you!
+    }
+    return (double) 1 / n;
+  }
+  ```,
+  caption: [A typical C implementation of `reciprocal()`],
+) <c_reciprocal>
+
+
 
 // TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
 
-In languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
+In programming languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.@nonzeroi32_reciprocal shows a possible implementation of this concept in Rust.
+
+#figure(
+  ```rust
+  pub struct NonZeroI32(i32);
+
+  impl NonZeroI32 {
+    pub fn new(n: i32) -> Result<Self> {
+      if n == 0 {
+        Err("n == 0 is not allowed!")
+      } else {
+        Ok(n)
+      }
+    }
+  }
+
+  pub fn reciprocal(n: NonZeroI32) -> f64 {
+    // ...
+  }
+  ```,
+  caption: [A new type `NonZeroI32` that represents the idea of a 32-bit integer *guaranteed* to not be zero],
+) <nonzeroi32_reciprocal>
 
 // FIXME @löhr: kleiner Überblick über die Arbeit
 
@@ -79,35 +112,35 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 == Rust
 // TODO more sub headings?
 
-- Modern language with many features that can increase correctness and safety
-- is marketed/intended as a low level language, usually competes near C in benchmarks
-  - Rust in Linux kernel
-  - RedoxOS
-  - coreutils / libc rewrite
-- features
-  - borrow checker / lifetime tracking / ownership tracking
-  - strict types /* TODO define, quote */, (almost) no implicit conversions
-  - RAII / destructors / `Drop` trait
-  - no data races
-  - fearless concurrency // <-> data races?
-  - error handling
-  - ADTs / modeling complex types
-  - generics
-  - typestate pattern
-- Unsafe rust
-  - *what we keep, what we lose*
-  - additional promises to uphold
-  - (ausblick: additional tools, static analysis, sanitizers etc.)
+// - Modern language with many features that can increase correctness and safety
+// - is marketed/intended as a low level language, usually competes near C in benchmarks
+//   - Rust in Linux kernel
+//   - RedoxOS
+//   - coreutils / libc rewrite
+// - features
+//   - borrow checker / lifetime tracking / ownership tracking
+//   - strict types /* TODO define, quote */, (almost) no implicit conversions
+//   - RAII / destructors / `Drop` trait
+//   - no data races
+//   - fearless concurrency // <-> data races?
+//   - error handling
+//   - ADTs / modeling complex types
+//   - generics
+//   - typestate pattern
+// - Unsafe rust
+//   - *what we keep, what we lose*
+//   - additional promises to uphold
+//   - (ausblick: additional tools, static analysis, sanitizers etc.)
 
 == FUSE
-- filesystem as process in userspace
-- don't have to build kernel modules (safer, easier dev workflow)
-- should be comparable though (why? give reasons)
-- architecture (/* TODO image */)
-  - fuse kernel module
-  - libfuse
-  - FS impl
-  - *=> our layer*
+// - filesystem as process in userspace
+// - don't have to build kernel modules (safer, easier dev workflow)
+// - should be comparable though (why? give reasons)
+// - architecture (/* TODO image */)
+//   - fuse kernel module
+//   - libfuse
+//   - FS impl
+//   - *=> our layer*
 
 
 // @bugden2022rustprogramminglanguagesafety
@@ -128,26 +161,6 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 
 // TODO I talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
 
-#figure(
-  ```rust
-  pub struct NonZeroI32(i32);
-
-  impl NonZeroI32 {
-    pub fn new(n: i32) -> Result<Self> {
-      if n == 0 {
-        Err("n == 0 is not allowed!")
-      } else {
-        Ok(n)
-      }
-    }
-  }
-
-  pub fn reciprocal(n: NonZeroI32) -> NonZeroI32 {
-    // ...
-  }
-  ```,
-  caption: [A new type `NonZeroI32` that represents the idea of a 32-bit integer *guaranteed* to not be zero],
-) <nonzeroi32_reciprocal>
 
 = Related work
 
@@ -156,21 +169,31 @@ In languages where we have strict and strong typing /* TODO define */, we can en
 == `rust-fatfs`@Oikawa2023
 
 A Rust reimplementation of the FAT filesystem standard created by Microsoft.
-It is implemented as a kernel module without usage of FUSE.
-Although the authors claim exploring security and safety benefits as motivation, the evaluation focuses on performance, benchmarking the work against the established C kernel module.
-
-// FIXME @löhr: explizit auch nennen, was der unterschied zu meiner lösung ist. gerne klarer werden.
+It is implemented as a kernel module, whereas our library lives in userspace with the usage of FUSE.
+Although the authors claim exploring security and safety benefits as motivation, the evaluation focuses only on performance, benchmarking the work against the established C kernel module. We did not consider empirical performance analysis, and focus on which kinds of CVEs can be prevented.
 
 == `fuser`
 
+The `fuser` crate, maintained by GitHub user `cberner`, is currently the most used FUSE bindings crate on `crates.rs`, counting over 150k downloads per month, and over 1k stars on GitHub./* FIXME @ask how to quote */
+It is not an academic project, but a practical solution for integrating FUSE into the Rust ecosystem, thereby leveraging the advantages of Rusts architecture for filesystem development.
+While our goals are not conceptually different as a whole, there is no explicit focus on security.
+Types are modeled very closely to the underlying C architecture, although users aren't forced to create C ABI compatible functions, since that --- like in our solution --- is abstracted away.
+In fact, probably due to increased performance, `fuser` does not use @libfuse but talks directly to the FUSE module via socket.
+This is a complex, low-level undertaking and was out of scope for our project, although it would have been interesting in principle, as the same design principles could still be applied.
+Still, results are comparable because the crate models `fuse_operations` very closely to @libfuse.
+Also, while we chose to use the high-level @libfuse API, which identifies files via paths directly and submits results synchronously, `fuser` leverages the low-level (LL) @libfuse API, which uses Inodes to represent entries and message helper structs to return asynchronously.
+This was carefully considered, but the high-level API simplifies some implementation parts while losing almost none of the targeted design space for safe systems programming, so it was deemed the better choice. // TODO also: sources for fuse LL api vs. "normal" (why normal is better)
+
+@fuser_docs
+
 == Rust for Linux@rustforlinux-website
 
-- rust-fatfs
-- fuser
-  - auch in rust
-  - fuse LowLevel statt "normal" API (mine)
-  - *aber*: verwendet eh niemand // TODO die paar papers finden die das gesagt haben
-- rust in linux kernel
+// - rust-fatfs
+// - fuser
+//   - auch in rust
+//   - fuse LowLevel statt "normal" API (mine)
+//   - *aber*: verwendet eh niemand // TODO die paar papers finden die das gesagt haben
+// - rust in linux kernel
 
 = Concept
 
@@ -181,20 +204,20 @@ Although the authors claim exploring security and safety benefits as motivation,
 @10.1145_3428204
 @10592287
 
-- read similar rust projects, get idea about how the structure and approach would look for the libfuse bindings
-- read up about `cbindgen` by mozilla (will def. need to use it)
-- read up about theoretical foundation of type systems and using them to encode programmer contracts
-- for every libfuse API call:
-  - decide if in-scope
-  - enumerate a list of (sensible) contracts
-  - encode through type system
-    - if that fails or becomes too hard, skip them and document that
-- (if possible) collect filesystem related CVEs from databases
-- (else) CWEs allgemein sammeln
-- match CVEs/CWEs with libfuse calls, find potential weaknesses/threads
-- evaluate if my rust constructs can fix those weaknesses. if not, try to improve bindings.
-- create stats and tables (e.g. percentage CVEs prevented, taken from a) sub section X, b) time span Y, etc.)
-- write introduction with foundational concepts
+// - read similar rust projects, get idea about how the structure and approach would look for the libfuse bindings
+// - read up about `cbindgen` by mozilla (will def. need to use it)
+// - read up about theoretical foundation of type systems and using them to encode programmer contracts
+// - for every libfuse API call:
+//   - decide if in-scope
+//   - enumerate a list of (sensible) contracts
+//   - encode through type system
+//     - if that fails or becomes too hard, skip them and document that
+// - (if possible) collect filesystem related CVEs from databases
+// - (else) CWEs allgemein sammeln
+// - match CVEs/CWEs with libfuse calls, find potential weaknesses/threads
+// - evaluate if my rust constructs can fix those weaknesses. if not, try to improve bindings.
+// - create stats and tables (e.g. percentage CVEs prevented, taken from a) sub section X, b) time span Y, etc.)
+// - write introduction with foundational concepts
 
 = Implementation
 // diagram (petrinetz)
@@ -252,10 +275,10 @@ The encoding of those is platform-dependent, usually being C-like ASCII strings 
 Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, we chose to not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question.
 
 === Unwinding across FFI boundaries <ch_unwind>
-- => is UB
-- have to wrap every possible panic point inside ```rust catch_unwind()```
-- not provably panic-free with just compiler
-  - but there is an interesting crate: `https://github.com/dtolnay/no-panic` => *future work*
+// - => is UB
+// - have to wrap every possible panic point inside ```rust catch_unwind()```
+// - not provably panic-free with just compiler
+//   - but there is an interesting crate: `https://github.com/dtolnay/no-panic` => *future work*
 // EXTRA what about possible (hidden) panics in my own code? integer overflow, slice indexing etc.
 
 When a Rust program is compiled with stack unwinding support and a panic is triggered, the default uwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data. /* FIXME lookup & cite? */
