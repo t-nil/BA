@@ -2,6 +2,10 @@
 
 #let glossary-list = (
   (
+    key: "OS",
+    long: "Operating System",
+  ),
+  (
     key: "trampoline_function",
     long: "trampoline function",
     description: "A wrapper function which has the job of being a proxy for another, binary-incompatible function, setting up the correct environment and converting the call. In our case, trampoline functions are ones that have the correct ABI and signature to be passed as FUSE operations, and, when executed, redirect execution flow into Rust code providing the actual filesystem functionality.",

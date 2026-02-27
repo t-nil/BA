@@ -48,7 +48,7 @@
 Since the beginning of computer programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
 For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
 
-One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type (@c_reciprocal). Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. For example, special behavior could be introduced to handle the undefined case by printing out errors. This discrepancy, between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract?
+One straightforward solution has always been to limit the function domain via documentation. Users of that function are expected to read that documentation and recognize that it is a violation of interface contract to call it with $$ x = 0 $$. Violation of that contract would in turn result in an error, a crash, or --- worse yet --- @UB:long. An approach with drawbacks, as there are now two sources of truth about the function domain. One of these --- the function signature, expressed in code --- is already technically incorrect, as we have not stated a way to express "integers without zero" as a valid type (@c_reciprocal). Additionally, as the program developes, the chance of both sources of truth to get further out-of-sync increases. For example, special behavior could be introduced to handle the undefined case by printing out errors. This discrepancy, between the high-level contract, expressible only in additional information in text form, and the function signature the compiler handles, raises the following question: Can we encode this precondition in such a way that the function signature makes it impossible to pass in values that violate any API contract? /* NEXT beispiel mit "wir crashen nicht mehr, sondern printen fehler und returnen NaN" */
 
 #figure(
   ```c
@@ -67,7 +67,17 @@ One straightforward solution has always been to limit the function domain via do
 
 // TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
 
-In programming languages where we have strict and strong typing /* TODO define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for these types, and we can make then fail if some invariants are not upheld. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32`@nonzeroi32_reciprocal that represents the idea of an integer that cannot be zero. By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.@nonzeroi32_reciprocal shows a possible implementation of this concept in Rust.
+In programming languages where we have strict and strong typing /* FIXME define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for values of these types, and if any invariants are not upheld, we can detect this unsoundness and trigger an error. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32` that represents the idea of an integer that cannot be zero. Unfortunately, not all languages provide the features necessary to formulate such powerful types. One prominent example is C, which is predominantly used in systems level programming, both in general and in the domain we are looking at in this work.
+Besides the basic datatypes that exist primarily to differentiate between CPU directives --- integers, floating points, characters, pointers --- users can create composites of these types via the `struct` or `union` constructs, and define functions to work on these datatypes only.
+But these type requirements can easily be subverted, because in C, casting between different types is often implicit, and there are no mechanism to enforce invariants of a type --- all user code that can "see" a struct can create or delete instances as it sees fit.
+
+That's why, in this work, we will look at Rust: a modern language that is gaining rapid traction in the area of systems programming, and has a strong, expressible type system as one of its flagship features. /* FIXME cite */
+This enables us to explore the latter approach.
+@nonzeroi32_reciprocal shows such an implementation in Rust.
+It utilizes the concept of a "newtype struct": a `struct` with one anonymous member, that is used to wrap this inner element and to effectively give new type semantics to it. /* FIXME that which bezug */
+If the inner value is chosen to be private, ergo not visible or accessible from code from a different module, this prevents any alternative way of constructing or modifying values of this new type other than what the module creator chooses to provide.
+This achieves exactly the desired effect. /* TODO evtl kürzen das knaggiger */
+By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
 
 #figure(
   ```rust
@@ -89,6 +99,25 @@ In programming languages where we have strict and strong typing /* TODO define *
   ```,
   caption: [A new type `NonZeroI32` that represents the idea of a 32-bit integer *guaranteed* to not be zero],
 ) <nonzeroi32_reciprocal>
+
+This is one of several features of Rust that promise improving soundness checking and language expressibility with no or minimal runtime impact.
+System programming is an area where these soundness guarantees are especially important.
+While a logic error stemming from an unchecked invariant in an application can crash this application or corrupt its data, a kernel or @OS bug can cause those failure states in any and every subsystem and program.
+Faulty @OS behaviour can cause instability on every layer of the system, and endanger the work of all users. /* FIXME quote? */
+Simultaneously, system programming has to produce performant instructions, since they will be running as the backbone of the @OS, which often leads to complex data structures where keeping invariants as cognitive load, for programmers to check upon every code change, is unlikely to produce said stability in the long run.
+That is also why solutions that penalize compile time only are especially valuable, because compile time is often expendable --- after all, most @OS:pl run many times as often as they compile.
+
+Our work is therefore targeting a subsystem of modern @OS development. Filesystems were chosen, because they fulfil all stated criteria: their performance matters, their correctness is crucial for stable system usage, and they deal with complicated, highly optimized data structures where invariants between those structures play a major role.
+Kernel module development is not a trivial task, though, and challenges during code writing and testing would cost additional time.
+Debugging is also comparably harder when the targeted module is injected into the @OS itself.
+FUSE (#strong[F]ilesystem in #strong[USE]rspace) offers a way out for this conundrum. /* FIXME quote https://www.kernel.org/doc/html/next/filesystems/fuse.html */
+It is a framework that works by combining a kernel module with a userspace library.
+Filesystems using it link against the userspace library and use it to communicate with the kernel module, which will redirect @OS requests to the userspace program.
+This provides an environment not unlike a sandbox: the kernel module is well known and tested, and approximately bug-free.
+The concrete filesystem, which we will implement, will live in userspace and therefore be easy to debug and not critical to system stability.
+And since the APIs are quite similar, approaches found to be working when modeling FUSE filesystems will with high probability also work in general, e.g. as native kernel modules.
+
+
 
 // FIXME @löhr: kleiner Überblick über die Arbeit
 
@@ -693,6 +722,21 @@ While @libfuse and Rust both return an error value
 // Verweis auf `panics/unwind across FFI`
 
 = Evaluation
+
+To evaluate the effectiveness of our approach, we collected a sample of CVEs found in the filesystem modules of the Linux kernel in recent years.
+We then categorized them based on whether the approach discussed here would have been effective in preventing them.
+We also implemented a simple prototype filesystem using our wrapper, to provide a reference point for the ergonomy and expressiveness of the API.
+
+== CVEs
+
+// - why CVEs in general
+The CVE (Common Vulnerabilities and Exposures) system is an internationally accepted, de-facto standard, cataloguing system for vulnerabilities TODO /* FIXME quote */
+
+// what CVEs ? why filter
+
+// evaluation strategy
+
+// result
 
 @cwe-top25-2025
 
