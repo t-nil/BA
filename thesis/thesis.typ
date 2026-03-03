@@ -280,10 +280,18 @@ This makes reviewing the @soundness property of unsafe code easier. /* FIXME quo
 
 Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
-1. No dereferencing of dangling or unaligned /* FIXME point to `Alignment` */ pointers.
-2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive. /* TODO vlt erklären, warum rust das so will. *den punkt auch bei den anderen punkten überlegen* */
+1. No dereferencing of @dangling or #gls("alignment", display: "unaligned") pointers.
+  This is obvious, since these requirements stem from the underlying hardware, and C also declares them invalid.@c_standard#cite(<rust-reference-1.92>, supplement: "ch. 17.2")
+2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
+  This is needed to provide same of Rusts safety guarantees: data races, use-after-free errors and iterator invalidation are all inherently impossible without shared mutable state.
 3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
-4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one bit pattern that would correspond to a numeric zero and is therefore illegal.
+  This also follows naturally from the basic type system axioms in Rust:
+  if a reference pointing to a value is held, then by rule 2 it is guaranteed that no mutable reference to this value exist simultaneously.
+  Therefore the value mustn't change.
+4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has.
+  E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one bit pattern that would correspond to a numeric zero and is therefore illegal.
+  This rule is also emergent, following from the basic type system principle that variables of a type must hold values of exactly that type.
+  Circumventing this would completely subdue the advantages arising from Rust's powerful type system.
 
 Because @libfuse calls all our callbacks with at least one C pointer, we have to check these invariants as rigorously as possible before we call into user code, if we want to eliminate them as sources of @UB.
 

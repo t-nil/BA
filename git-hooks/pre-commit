@@ -1,10 +1,10 @@
 #!/bin/fish
 
-function _die -a status
+function _die -a status_
   set_color -o brred
   echo $argv
   set_color normal
-  exit $status
+  exit $status_
 end
 
 set STAGED_FILES (git diff --cached --name-only)

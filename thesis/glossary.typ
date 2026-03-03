@@ -37,6 +37,18 @@
     description: "A program/function/block of code that will not, under any circumstances, invoke a panic. If a block of code is panic-free, then the execution of the resulting instructions will always follow along the control flow of the written code.",
   ),
   (
+    key: "alignment",
+    description: "A property of values in memory, that specifies if their memory address is divisible by a certain power of two determined by their type's alignment requirement. It is usually a soundness violation in Rus to access unaligned values.",
+  ),
+  (
+    key: "unaligned",
+    description: "See alignment.",
+  ),
+  (
+    key: "dangling",
+    description: "A property of a pointer, meaning that it points to a memory address that is not accessible, or is not filled with a valid value of that pointers type.",
+  ),
+  (
     key: "newtype_struct",
     short: "newtype struct",
     description: "TODO",
