@@ -142,11 +142,11 @@ And since the APIs are quite similar, approaches found to be working when modeli
 // TODO more sub headings?
 
 // - Modern language with many features that can increase correctness and safety
-// - is marketed/intended as a low level language, usually competes near C in benchmarks
+// - is marketed/intended as a low level language, usually competes near C in benchmarks /* FIXME cite */
 //   - Rust in Linux kernel
 //   - RedoxOS
-//   - coreutils / libc rewrite
-// - features
+//   - coreutils / libc rewrite /* canonical/ubuntu? cite o/
+// - features // stefan: auf 3-5 beschränken, mit unterkapiteln
 //   - borrow checker / lifetime tracking / ownership tracking
 //   - strict types /* TODO define, quote */, (almost) no implicit conversions
 //   - RAII / destructors / `Drop` trait
@@ -195,11 +195,16 @@ And since the APIs are quite similar, approaches found to be working when modeli
 
 // TODO bento (found by @Oikawa2023)
 
-== `rust-fatfs`@Oikawa2023
+== `rust-fatfs`
 
-A Rust reimplementation of the FAT filesystem standard created by Microsoft.
-It is implemented as a kernel module, whereas our library lives in userspace with the usage of FUSE.
-Although the authors claim exploring security and safety benefits as motivation, the evaluation focuses only on performance, benchmarking the work against the established C kernel module. We did not consider empirical performance analysis, and focus on which kinds of CVEs can be prevented.
+`rust-fatfs` is a Rust reimplementation of the FAT filesystem family created by Microsoft.
+FAT (File Allocation Table) was originally created in 1977, with the newest variant --- `FAT32` --- initially published 1996.
+Despite that, it stays relevant until today, as it is often used in technically constrained environments, where it is preferred for its comparatively simple structure and implementation.
+For this reason, it is relied upon by digital cameras for their dedicated storage cards, and as filesystem for the boot partition in the UEFI specification.#cite(<uefi_spec_2_11_2024>, supplement: "p. 462")@microsoft_kb_q154997_fat32__mirror@ecma_107_1995_pdf
+/* FIXME mit nennung von autor zitieren. *//* FIXME bissel mehr über FAT. vlt statistiken, warum relevant. */
+
+`rust-fatfs` implements the `FAT12`, `FAT16` and `FAT32` members of the FAT family. It is implemented as a kernel module, whereas our library lives in userspace with the usage of FUSE. The authors were motivated by lack of existing filesystem kernel modules written in Rust, as well as a general interest in Rust given its recent rise in popularity regarding the linux kernel, and its promising safety features.
+`rust-fatfs` was solely evaluated from a performance perspective, with the authors measuring the number of instructions executed during sample workloads, run inside a VM. These metrics are compared to the established C kernel module. We did not consider empirical performance analysis, and focus on which kinds of CVEs can be prevented.@Oikawa2023
 
 == `fuser`
 
@@ -263,10 +268,10 @@ This was carefully considered, but the high-level API simplifies some implementa
 
 // TODO bindgen
 
-Safe @Rust can never (sans compiler errors) cause @UB in the resulting binary program. /* TODO quote */
+Excluding internal compiler errors, safe @Rust can never cause @UB in the resulting binary program. /* TODO quote */
 In unsafe @Rust, this is not the case; the programmer now has to uphold several invariants to ensure @soundness. /* TODO quote */
-In the C standard, where behavior in any situation not explicitly defined by the language standard is implicitly “undefined“, Rust limits these invariants to a set of specific, well-documented cases.
-This makes reviewing the @soundness property of unsafe code easier.
+Unlike in the C standard, where behavior in any situation not explicitly defined by the language standard is implicitly “undefined“, Rust limits these invariants to a set of specific, well-documented cases.
+This makes reviewing the @soundness property of unsafe code easier. /* FIXME quote */
 
 === Pointers <ch_pointers>
 
@@ -276,7 +281,7 @@ This makes reviewing the @soundness property of unsafe code easier.
 Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
 1. No dereferencing of dangling or unaligned /* FIXME point to `Alignment` */ pointers.
-2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
+2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive. /* TODO vlt erklären, warum rust das so will. *den punkt auch bei den anderen punkten überlegen* */
 3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
 4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has. E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one bit pattern that would correspond to a numeric zero and is therefore illegal.
 
@@ -300,8 +305,10 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
 
 Rust's native string types (`str`, `String`) exclusively store UTF-8.#cite(<rust-book>, supplement: "ch. 8.2")
 The main kind of strings this library needs to handle are the file paths that filesystem callbacks are called on.
-The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite */
+The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite, stefan sagt "since nt und das ist != newer" */
 Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, we chose to not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question.
+
+/* TODO nul termination */
 
 === Unwinding across FFI boundaries <ch_unwind>
 // - => is UB
@@ -310,21 +317,21 @@ Correctly detecting and handling string encodings is a hard problem  /* MAYBE ci
 //   - but there is an interesting crate: `https://github.com/dtolnay/no-panic` => *future work*
 // EXTRA what about possible (hidden) panics in my own code? integer overflow, slice indexing etc.
 
-When a Rust program is compiled with stack unwinding support and a panic is triggered, the default uwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data. /* FIXME lookup & cite? */
+When a Rust program is compiled with stack unwinding support and a @panic is triggered, the default uwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data. /* FIXME lookup & cite? */
 In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
 Doing so correctly is a non-trivial task and can easily lead to @UB.#cite(<rust-reference-1.92>, supplement: "ch. 14")
-On the other hand, turning unwinding off loses helpful stack traces and debug information when a panic happens.
+On the other hand, turning unwinding off causes helpful stack traces and debug information to be lost when a @panic occurs.
 We therefore decided to keep unwinding behaviour while preventing any panic from propagating across an FFI boundary.
 
-Every function that is visible to C can potentially be called from an environment where unwinding works differently or not at all.
-Therefore each of those functions must be panic-free.
+Every function that is visible to C can potentially be called from an environment where unwinding works differently --- or not at all.
+Therefore each of those functions must be @panic-free.
 As of now, there is no compiler flag or lint that detects or prevents use of panicking functions, operators or language keywords.
-As a result, this must be done manually by reviewing the source code of the functions in question, and, recursively, the functions they call.
+As a result, this requirement must be checked manually by reviewing the source code of the functions in question, and, recursively, the functions they call.
 A convention exists to note possible panics in a section of the function documentation, but even the standard library doesn't consistenly follow it.
 // MAYBE enumerate sources for panics
 
 // FIXME move to future work? or implement real quick >:)
-One crate /* FIXME define crate */ that tackles this problem is `no_panic`#footnote[https://docs.rs/no-panic/latest/no_panic/] by David Tolnay, a prominent figure amongst the Rust community. It provides the ability to annotate function declarations with an attribute macro, and promises to halt the compilation with an error if the function is *not provably panic-free*.
+One crate /* FIXME define crate */ that tackles this problem is `no_panic`#footnote[https://docs.rs/no-panic/latest/no_panic/] by David Tolnay, a prominent figure amongst the Rust community. It provides the ability to annotate function declarations with an attribute macro, and promises to halt the compilation with an error if the function is *not provably @panic-free*.
 This implies that it is possible to write functions that would not panic, but would still not compile if the compiler is unable to prove that property.
 The crate thereby takes a stance typical of Rust philosophy: it is preferable to reject sound programs, than to accept unsound ones.
 
@@ -369,7 +376,7 @@ All implemented operations check their pointer arguments for validity, with the 
 The obligatory `path` argument, that identifies the entry to operate on, is converted from a C string into native Rust, and also checked for validity (@ch_strings_unicode).
 After basic correctness of inputs has been ensured, the code tries to load the filesystem object from the global registry.
 This is done to minimize unneccessary work when some inputs are not sound.
-The load could fail, e.g. in case the user code triggered a panic earlier, or due to a bug in the wrapper library. This is also handled (@ch_init).
+The load could fail, e.g. in case the user code triggered a @panic earlier, or due to a bug in the wrapper library. This is also handled (@ch_init).
 
 After that, some operation-specific instructions are executed, and a context is set up to call into user code without triggering panic unwinding (@ch_unwind).
 @libfuse datatypes are converted to our Rust representations, adding the implicit safety checks.
@@ -487,8 +494,8 @@ Because we use `unsafe`, we documented the assumptions made and invariants we ch
   - con: only one instance per ```Filesystem``` struct type per process.
     - workaround: just use wrapper structs (can be done easily from user code)
 
-Since the libfuse initialization routine takes a struct of callback function pointers (`fuse_ops`), that creates the following problem.
-Since the C signature is predetermined, user functions cannot be used, because that would force signatures of user functions to use the lower-level C types which we try to avoid.
+The libfuse initialization routine takes a struct of callback function pointers (`fuse_ops`), which creates the following problem:
+since the C signature is predetermined, user functions cannot be used, because that would force signatures of user functions to use the lower-level C types which we try to avoid.
 That means, even though there is a one-to-one correspondence between FUSE operation callbacks and trait methods on the `Filesystem` trait, they are not compatible and cannot be used interchangably.
 The obvious approach is to provide #glspl("trampoline_function"), which then wrap, transform and safety-check the C type values on call and dispatch into user code.
 A non-trivial problem, one that is not obvious at first sight, is how the trampoline knows which filesystem implementation to dispatch to.
@@ -504,7 +511,9 @@ Since it is possible /* FIXME really? prob. not, is a trait object and e fat. we
 
 // FIXME no second disadvantage?
 
-Both disadvantages would in theory prevented by a solution after option 2, and thankfully, with the use of generics, Rust brings includes the tools to implement such a solution. As seen in @trampoline_fn_signature, this exemplary trampoline function is generic over types implementing our `Filesystem` trait.
+Both disadvantages would in theory be prevented by a solution after option 2.
+Fortunately, with the use of generics, Rust brings includes the tools to implement such a solution.
+As seen in @trampoline_fn_signature, this exemplary trampoline function is generic over types implementing our `Filesystem` trait.
 This leads the Rust compiler to generate a concrete, independent `getattr` trampoline function for every trait implementation of `Filesystem` that is used to call our initialization function.
 The generic approach is then combined with a singleton registry#footnote[https://crates.io/crates/singleton-registry] which provides a global map of values, indexed by types.
 We can now store the concrete user-supplied filesystem struct inside this registry and use the type of this filesystem struct as index, which additionally will be deduced implicitly by the compiler from the argument types of our initialization function.
@@ -749,14 +758,17 @@ To test our wrapper library, we created a minimal filesystem using it.
 It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem.#cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html")
 
 This filesystem is read-only, since that narrows down the functionality we have to implement.
-Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content. The following example (@hello2_file_table) shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.
+Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content.
+The dynamic aspect was chosen deliberately, because it leaves less room for the wrapper to assume properties of the filesystem, which should lead to an increased ability to detect flaws.
+The following example (@hello2_file_table) shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.
 This dynamic property of our test filesystem allows us increase confidence in our abstractions, by providing less stability on which to accidentally depend.
 
-Additional logic was deemed necessary to be able to build a hierarchical recursive folder data structure from the provided file table, which is needed for listing directory contents. Implementing this keeps the file table itself clean and readable, and accelerates development and testing.
+Additional logic was deemed necessary to be able to build a hierarchical recursive directory data structure from the provided file table, which is needed for listing directory contents. Implementing this keeps the file table itself clean and readable, and accelerates development and testing.
 
-Besides some boilerplate to iterate over files in a folder, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
-The implementations were straight-forward and simple, which which was one of @libfuse_wrapper. Most low-level details and pitfalls were abstracted away.
-One aspect that required a proportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
+Besides some boilerplate to iterate over files in a director, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
+The implementation was straight-forward and simple, which which was one of our design goals for @libfuse_wrapper.
+Most low-level details and pitfalls were abstracted away.
+One aspect that required a disproportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
 This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
 
 // FIXME @ask more?
