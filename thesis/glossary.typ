@@ -12,12 +12,16 @@
   ),
   (
     key: "libfuse_wrapper",
-    short: "our `libfuse` wrapper",
+    short: "our libfuse wrapper",
   ),
   (
     key: "libfuse",
-    short: "`libfuse`",
-    long: "the `libfuse` C library",
+    long: "the libfuse C library",
+  ),
+  (
+    key: "DKMS",
+    long: "Dynamic Kernel Module Support",
+    description: "A framework for creating Linux kernel modules and loading them at runtime, without them being compiled directly into the kernel.",
   ),
   (
     key: "UB",
@@ -87,6 +91,11 @@
   (
     key: "NFS",
     long: "Network File System",
+  ),
+  (
+    key: "CVE",
+    long: "Common Vulnerabilites and Exposures / Common Vulnerability Enumeration (old)",
+    description: "An internationally accepted, de-facto standard, cataloguing system for vulnerabilities. In colloquial terms, \"a CVE\" refers to an entry in the CVE database, managed by MITRE.",
   ),
   // Add more terms
 )

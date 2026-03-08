@@ -136,16 +136,97 @@ And since the APIs are quite similar, approaches found to be working when modeli
 
 = Background
 
+// alle wahrsch. auch wichtig bei Motivation
+@jung2020safe
+@10.1145_3102980.3103006
+@10.1145_3360573
+@10.1145_3428204
+@10592287
 
 
 == Rust
-// TODO more sub headings?
 
 // - Modern language with many features that can increase correctness and safety
 // - is marketed/intended as a low level language, usually competes near C in benchmarks /* FIXME cite */
 //   - Rust in Linux kernel
 //   - RedoxOS
 //   - coreutils / libc rewrite /* canonical/ubuntu? cite o/
+
+Rust is a modern programming language, created in 2006 by a Mozilla employee and endorsed by Mozilla in hopes of creating a safer web browser engine.
+It is intended for use as a low level systems language, usually competing with C in benchmarks; /* FIXME cite */
+compared to C, it incorporates numerous improvements aimed at increasing safety and automatic correctness of written software, with minimal to no runtime impact.
+@Thompson2023RustFastestGrowing
+
+=== Type system
+
+// TODO more in-depth
+
+Rust features a
+
+=== Lifetimes and ownership
+- zero overhead
+- makes use-after-free and buffer overflows impossible
+-
+// a.k.a. borrow checker :sunglasses:
+
+// mention RAII and ```rust Drop``` trait
+
+=== No data races and fearless concurrency
+
+Concurreny is an important aspects of today's software.
+Single maschines usually have several physical processor cores, and programs wanting to take advantage of the hardware capabilities need to deal with some variant of concurrency.
+Furthermore, even not hitting hardware limitations, modern software usually consists of multiple distinct subroutines --- rendering a GUI, receiving events, working calculations, providing an API --- that are desired to run simultaneously, lest responsivity and latency suffer, and with it the user experience.
+This is also true for @OS code and filesystems, as these too must take advantage of modern computer architecture to deliver performance goals.
+A filesystem on a typical modern computer can expect many different programs to concurrently access different files, or even use the filesystem for inter-process communication.
+This makes managing concurrency scenarios mandatory.
+For example, BtrFS spawns many worker threads to handle the background work necessary to maintain the filesystem structure. @btrfs.5_manpage
+Concurrency, while ubiquitous, brings many implementational challenges in modern languages.
+C, for example, declares every data race @UB. @c_standard
+Rust differs from these in that it leverages the type systems to make certain guarantees in concurrent programming, namely that data races cannot occur.
+
+Data races happen when data is shared mutably between threads without proper synchronization, mutably meaning more than one thread has the means of modifying the state.
+Since execution order of instructions between multiple threads is undefined, when multiple threads attempt to change the shared data at the same time, the outcome --- the state of the shared data --- is also undefined.
+/* @ask stefan example? */
+/* @ask mehr eingehen auf parallel/concurrent/async/thread/task/foo */
+
+Since data races can lead to program states that are hard to reason about, automatic prevention would be beneficial to the development process. @rust-reference-1.92
+By encoding the "concurrent-safe-ness" of data types in the type system, Rust brings about such a mechanism.
+There are two traits that function as markers for these properties: ```rust Send``` and ```rust Sync```.
+```rust Send``` signals that variables of this type can safely be transferred between threads, while ```rust Sync``` declares a type is safe to be accessed simultaneously by multiple threads.
+These traits contain no members, since their only function is marking thread-safety.
+Manually implementing them requires an unsafe block, since it is up to the programmer to check that the type really is thread-safe;
+on the other side, types only consisting of ```rust Send```/```rust Sync``` members can have their ```rust Send```/```rust Sync```-ness derived automatically via a macro.
+
+As a side note it should be mentioned that while safe Rust guarantees freedom of data races, code races or deadlocks can still happen.
+It is assumed that these cannot be prevented in sufficiently powerful languages, as that would require checking every possible combination of thread execution states, which is NP-complete in recursion to the halting problem. /* @ask stefan kann ich das so sagen? ':D */
+
+=== Error handling
+
+One of the strong points of Rusts stance on a strong and flexible type system comes with its choice in error handling.
+One common pitfall with C, that is the cause of many production bugs, is that C uses patterns to signal errors that are implicit,
+usually reserving part of the range of the function for error codes, and sometimes storing additional info on the error in a global variable --- commonly `errno`.
+This handling is implicit because, since the return type doesn't inherently encode the possibility of an error, manual checks by the programmer must be inserted for every potential source of errors, which increases cognitive load.
+Forgetting to insert such a check almost always leads to unsoundness, since a potential error will be handled as some sort of valid success value.
+Circumstances are even more difficult when dealing with `void` functions, that don't return a value but rely on side effects instead.
+Since no return value handling is required for "normal", non-error code paths, the chance of forgetting to check for errors is increased again.
+Although some C compilers define custom extension attributes that can annotate a function to emit a warning when the function's result is unused#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html], no standardized solution exists.
+@tian2017automatically
+
+Rust solves this issue by combining the strong type system guarantees with sum types, or tagged unions.
+Unions, as they are used in C, are usually only useful in implementing low-level data structures or protocols where memory efficiency is of grand importance.
+Since they require the programmer to keep track of which data type is stored inside them at any moment --- or, to manually track this state via extra variables --- variable accesses of invalid type are encouraged, often leading to undefined behaviour.
+Rusts decision to introduce labelling leads to strongly-typed unions --- called `enum`s in Rust --- that are always checked, by nature of the type system.
+The programmer is forced by the compiler to handle every occuring case explicitly, and where dynamic handling is required, runtime checks are emitted at the least.
+
+Rust then introduces the "result type", ```rust enum Result<T, E> { Ok(T), Err(E) }```.
+This represents a tagged union two type parameters: the success type `T` and the error type `E`.
+With this, a function from ```rust A -> B``` can trivially be transformed into a fallible function ```rust A -> Result<T, E>``` with error type `E`.
+```rust A -> Result<T, E>``` can never be accidentally be misused as `T`, nor `E`: the type system enforces the values be unpacked and every case handled accordingly.
+Therefore, there is no need to encode error states in numeric return values, such as the Linux kernel using negative return values for error signaling.
+This must be considered a hack, as it severely limits the design space of functions, and diverges program semantic from the specified data types.
+
+Coupled with Rust's ```rust #[must_use]``` function annotation, which is set on the STD ```rust Result``` implementation, Rust prevents accidentally not handling error results, whether by ignoring a return value or by using a fallible result.
+
 // - features // stefan: auf 3-5 beschränken, mit unterkapiteln
 //   - borrow checker / lifetime tracking / ownership tracking
 //   - strict types /* TODO define, quote */, (almost) no implicit conversions
@@ -171,6 +252,28 @@ And since the APIs are quite similar, approaches found to be working when modeli
 //   - FS impl
 //   - *=> our layer*
 
+// FIXME how to "cite" pictures
+#align(center, [#image(
+    "images/FUSE_structure.svg",
+    alt: "User Application <-> glibc <-> (Kernel) VFS <-> (Kernel) Fuse Kernel Module <-> glibc <-> libfuse <-> FUSE User Level Daemon",
+    width: 70%,
+  )#footnote[https://commons.wikimedia.org/wiki/File:FUSE_structure.svg]])
+
+FUSE (#strong[F]ilesystem in #strong[USE]rspace) is a mechanism for filesystem modules in the Linux kernel, introduced in `2.6.14` in 2005. @linuxkernel_changelog_2_6_14 @linuxkernel_fuse_docs
+It lifts the requirement of filesystems being kernel modules, which meant they run in kernel space and therefore have the highest priviledge level, which potentially impacts security and stability of the system.
+Additionally, installing a new kernel module involves a great amount of additional work:
+At best, the module has to be compiled via @DKMS against every kernel in use by target machines.
+At worst, a copy of the kernel source code has to be maintained with the filesystem module added, and on every upstream kernel update the whole kernel has to be recompiled.
+Kernel modules also operate under a strict subset of available tools and resourcers, and are more complex to program, which increases development costs/* FIXME cite? */.
+Being able to write filesystems as generic userspace programs can therefore yield various benefits.
+
+The FUSE project replaces the need for a distinct kernel module per filesystem by providing a general module, which the userspace daemon then communicates with.
+The necessary kernel APIs can therefore be forwarded via a message socket, solving the need for elevating filesystem code to kernel mode.
+A more familiar experience is provided through @libfuse, which is a C library presenting an array of functions and types with an API similar to that of the kernel.
+This abstracts away the message passing style of the daemon, and enables users to simply implement the functions established in the @POSIX filesystem section --- `read`, `mkdir`, `ioctl` and similar.
+This creates the illusion that implementing a filesystem is nothing more than providing a set of function bodys for the filesystem API inside `libc`, which takes away much of the complexity behind the scenes and enables creating simple filesystems with low development cost and entry barrier.
+
+
 
 // @bugden2022rustprogramminglanguagesafety
 // @방인영2024study
@@ -185,15 +288,30 @@ And since the APIs are quite similar, approaches found to be working when modeli
 // - (see linux kernel efforts to move rust into the project, especially in filesystems area)
 // - can CVEs be effectively prevented?
 // - (Or, if non-exploitable, can crashes be prevented?)
-//
-// TODO stuff aus Praxisbericht/Projektbericht klauen?
 
 // TODO I talk about programming in general but clearly focus on an early machine-level language like C. state explicitly?
 
 
 = Related work
 
-// TODO bento (found by @Oikawa2023)
+== Bento
+
+- paper refs:
+  - fuse performance: 48, eval
+  - file system crash finder: CrashMonkey (37)
+
+- sandboxed Rust FSs in linux kernel
+- can be restarted/swapped/updated without interruption to userspace
+- eval: performance
+  - comparable to native ext4
+  - 7x faster than FUSE (on git clone)
+- ?? file provenance tracking ??
+@miller2021high
+
+#cite(<miller2021high>) propose a problem space similar to our work: filesystem development is tedious, because kernel modules are hard to debug; a filesystem kernel module crashing the system through bugs is also suboptimal.
+Having said that, in their evaluation FUSE falls short because of significant overhead introduced into metadata-heavy workloads --- such as `git clone` of big repositories --- which incentivized them to develop a novel solution.
+Bento is a framework for developing Linux filesystems that plugs into the @VFS kernel component and provides a sandbox for filesystem implementations written in Rust.
+Modules using this framework can be loaded, reloaded and updated without interrupting userspace work, and have their crashes isolated from the rest of the kernel, increasing resilience to filesystem bugs.
 
 == `rust-fatfs`
 
@@ -231,27 +349,43 @@ This was carefully considered, but the high-level API simplifies some implementa
 
 = Concept
 
-// alle wahrsch. auch wichtig bei Motivation
-@jung2020safe
-@10.1145_3102980.3103006
-@10.1145_3360573
-@10.1145_3428204
-@10592287
-
 // - read similar rust projects, get idea about how the structure and approach would look for the libfuse bindings
 // - read up about `cbindgen` by mozilla (will def. need to use it)
 // - read up about theoretical foundation of type systems and using them to encode programmer contracts
+
+First, we study works that explore safety aspects of Rust features, especially regarding its type system.
+We also study similar works to this thesis that leverage Rust to write safety-focused system code.
+We extract principles and patterns, which can then be applied to constructs and invariants encountered when developing an API for filesystems.
+
 // - for every libfuse API call:
 //   - decide if in-scope
 //   - enumerate a list of (sensible) contracts
 //   - encode through type system
 //     - if that fails or becomes too hard, skip them and document that
+
+To limit the scope of this work, we filter the list of needed FUSE operations to provide an API for a minimal file system.
+For each operation deemed necessary, we enumerate a list of contracts and invariants that are either explicitly or implictly expressed in code or documentation.
+We then decide for each invariant, if and how it can be incorporated in our system of checks, prioritizing static analysis and compile-time correctness over automatically emitting runtime checks.
+For each invariant that is regarded impossible to check in this sense, we document the shortcomings of our system and potential improvements for the future.
+
 // - (if possible) collect filesystem related CVEs from databases
 // - (else) CWEs allgemein sammeln
 // - match CVEs/CWEs with libfuse calls, find potential weaknesses/threads
 // - evaluate if my rust constructs can fix those weaknesses. if not, try to improve bindings.
 // - create stats and tables (e.g. percentage CVEs prevented, taken from a) sub section X, b) time span Y, etc.)
+
+The CVE (Common Vulnerabilities and Exposures) system is an internationally accepted, de-facto standard, cataloguing system for vulnerabilities FIXME. In colloquial terms, "a CVE" refers to an entry in the CVE database, managed by MITRE.
+For evaluation, we collect a sample of recent recorded CVEs from the Linux kernel filesystem subsystem.
+This e.g. includes the @VFS and several shipped filesystem implementations.
+We utilize a search mask for the National Vulnerability Database#footnote[https://nvd.nist.gov/] for filtering the relevant data.
+Each CVE from the sample is then analyzed and sorted into three categories:
+- Could have been prevented using our method (🟢)
+- Could partially have been prevented / could have been prevented under certain circumstances (🟡)
+- Could not have been prevented (🔴)
+We include reasoning for every categorization, and if deemed non-preventable, we document what could be improved in our method, or why the problem is out-of-scope for our thesis.
+
 // - write introduction with foundational concepts
+
 
 = Implementation
 // diagram (petrinetz)
@@ -747,7 +881,7 @@ We also implemented a simple prototype filesystem using our wrapper, to provide 
 == CVEs
 
 // - why CVEs in general
-The CVE (Common Vulnerabilities and Exposures) system is an internationally accepted, de-facto standard, cataloguing system for vulnerabilities TODO /* FIXME quote */
+TODO /* FIXME quote */
 
 // what CVEs ? why filter
 
@@ -756,6 +890,74 @@ The CVE (Common Vulnerabilities and Exposures) system is an internationally acce
 // result
 
 @cwe-top25-2025
+
+
+
+#show table.cell: set text(size: 0.8em)
+#table(
+  columns: 4,
+  table.header([*CVE*], [*problem*], [*solution*], []),
+  [2011-0699],
+  [FIXME deutsch: unerwartete signed/unsignedness von operatoren führt zum overflow
+    (und AFAICS zu negativen kmalloc sizes)],
+  [ich habe wrapper `Wrapping<Num>` und `Saturating<Num>`,
+    und ich kann trivialerweise zB noch `Checked<Num>` bauen.
+    damit gebe ich gleichzeitig das verhalten des systems vor
+    (kein surprise overflow) und habe zusätzlich eine klare
+    annotation ggü der programmierperson, welches verhalten
+    auftreten wird.],
+  [🟡],
+
+  [2025-21646],
+  [@procfs expects maximum path length of 255, this was overseen by @afs implementors, leading to a runtime error],
+  [if @procfs API were implemented per my concept, maximum path length could be encoded in the type, so compiler could warn/error on oversight],
+  [🟢],
+
+  [2024-55641],
+  [When quota reservation on XFS fails due to IO errors shutting down the filesystem, inodes were mistakenly not unlocked during cleanup.],
+  [Implementing inodes in Rust can make use of the `Drop` trait, automatically unlocking them as they go out of scope.#footnote[see also _RAII_]],
+  [🟢],
+
+  [2024-45003],
+  [Inside the @VFS layer, during inode eviction, a race condition can result in a deadlock when inodes that are marked for deletion get accessed by a filesystem.],
+  [Rust provides no builtin solution to race conditions. While data races are automatically prevented in safe Rust, preventing deadlocks still lies in the hands of the programmer.],
+  [🔴],
+
+  [2022-48869],
+  [A data race in the `gadgetfs` implementation can lead to use-after-free.],
+  [This is a classic example of a multithreaded program not using the correct synchronization primitives for shared mutable state. As long as safe Rust is used for access of this state --- in a hypothetical Rust-only implementation ---, data races are guaranteed by the language to not occur. (However, using unsafe Rust could limit this guarantee.)],
+  [🟢/🟡],
+
+  [2024-42306],
+  [In the `udf` kernel module, when a corrupted block bitmap is detected, allocation is aborted but subsequent allocations will still not check the fail state and instead blindly use the allocation buffer, leading to undefined state. The solution was to use a "verified" bit to check the bitmap for validity.],
+  [This depends: if the "verified" bit existed before the issue was found, but was erroneously not checked, this can be prevented through stricter type modelling in Rust. However, if the case in question was simply not considered during implementation, and the mentioned bitflag was introduced as solution, then this constitutes a typical logic error where not all possible system states are considered, and cannot be prevented by our approach.],
+  [🟡],
+
+  [2024-46695],
+  [A root user on an @NFS client can, under specific circumstances, change security labels on a mounted @NFS file system. This happens because a mandatory permission check was overlooked, which was documented in the contract of the function ```c __vfs_setxattr_noperm()```.],
+  [Our approach would allow to enforce these permission checks as part of the type system, either by a type around ```c __vfs_setxattr_noperm()``` performing them itself, or by only yielding the correct marker types when the permissions are checked.],
+  [🟢],
+
+  [2025-38663],
+  [A sanity check for invalid file types was missing from the `nilfs2` module.],
+  [As concretely shown within the ```rust FileType``` enum in our wrapper library, construction of the enum from an invalid file type ID would have automatically resulted in an error.],
+  [🟢],
+
+  [2023-52590],
+  [Due to an interaction with @VFS, renaming a directory on `ocfs2` could result in filesystem corruption, because a lock was not properly aquired.],
+  [Although, in theory, this would be part of the @VFS contract that we could try to encode in the type system, this looks like a logic error as result of a complex interaction of modules. This kind bugs are notoriously hard to avoid completely by software tooling, because they require a detailed high-level understanding of components and contracts that is usually very hard to express in a machine-understandable way.],
+  [🟡/🔴],
+
+  [2024-50202],
+  [In `nilfs2`, errors were ignored in a procedure searching for directory entries. This could lead to a hang later on when the error are rediscovered.],
+  [Error handling is one of Rust's strengths, because they are wrapped into the return type and the language requires the programmer to give explicit instructions on how to react to the error case. This is different in C, where errors are usually hidden away in global state, or --- while part of return value --- there is no mechanism to force explicit handling.],
+  [🟢],
+
+  [2024-47699],
+  [A potential null pointer dereference was found inside `nilfs` when dealing with a corrupted filesystem.],
+  [While unsafe Rust does not prevent accidental null pointer /* FIXME NonNull? */ derefs, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
+  [🟢],
+)
 
 // hier CVEs auswerten, vlt oben in Methodology schon konkret auflisten
 == A prototype filesystem: `hello2` <ch_prototype>

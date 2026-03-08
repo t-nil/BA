@@ -161,6 +161,25 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
   x-found-via = {10.1145_3102980.3103006}
 }
 
+--- Background---
+
+@manual{btrfs.5_manpage,
+  title      = "btrfs(5) --- Linux manual page",
+  edition   = "6.16.1",
+  date       = {2025-09-10},
+}
+
+--- CVEs ---
+
+@online{MannChristey1999TowardsCVE,
+  author       = {Mann, David E. and Christey, Steven M.},
+  title        = {Towards a Common Enumeration of Vulnerabilities},
+  institution  = {{The MITRE Corporation}},
+  date         = {1999-01-08},
+  url          = {https://www.cve.org/Resources/General/Towards-a-Common-Enumeration-of-Vulnerabilities.pdf},
+  urldate      = {2026-03-04},
+}
+
 --- C ---
 
 @online{c_standard,
@@ -169,6 +188,15 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
   url     = {https://gcc.gnu.org/onlinedocs/gcc/Standards.html},
   urldate = {2026-03-03},
 }
+
+@inproceedings{tian2017automatically,
+  title={Automatically diagnosing and repairing error handling bugs in c},
+  author={Tian, Yuchi and Ray, Baishakhi},
+  booktitle={Proceedings of the 2017 11th joint meeting on foundations of software engineering},
+  pages={752--762},
+  year={2017}
+}
+
 
 --- Rust ---
 
@@ -202,13 +230,49 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
   urldate = {2026-02-18}
 }
 
+@online{Thompson2023RustFastestGrowing,
+  author       = {Thompson, Clive},
+  title        = {How Rust Went from a Side Project to the World's Most-Loved Programming Language},
+  organization = {{MIT Technology Review}},
+  date         = {2023-02-14},
+  url          = {https://www.technologyreview.com/2023/02/14/1067869/rust-worlds-fastest-growing-programming-language/},
+  urldate      = {2026-03-04},
+  note         = {Access to the publisher page may be restricted for automated clients; metadata cross-checked via third-party citations.},
+}
+
 --- libfuse ---
+
+@online{linuxkernel_changelog_2_6_14,
+  author   = {{Linux Kernel Newbies}},
+  title    = {Linux 2.6.14},
+  url      = {https://kernelnewbies.org/Linux_2_6_14},
+  urldate  = {2026-03-06},
+  note     = {Last updated 2017-12-30},
+  organization = {KernelNewbies}
+}
+
+@online{linuxkernel_fuse_docs,
+  author   = {{The kernel development community}},
+  title    = {FUSE (Filesystem in Userspace) Technical Documentation},
+  url      = {https://docs.kernel.org/next/filesystems/fuse/index.html},
+  urldate  = {2026-03-06},
+  organization = {The Linux Kernel documentation},
+  note     = {Documentation version: next-20260114}
+}
 
 @online{libfuse_docs,
   title        = {libfuse API documentation},
   authors      = {{The libfuse contributors}},
   url          = {https://libfuse.github.io/doxygen/},
   urldate      = {2026-02-21},
+}
+
+@online{libfuse_wiki_filesystems,
+  title   = {Filesystems},
+  author  = {{libfuse contributors}},
+  url     = {https://github.com/libfuse/libfuse/wiki/Filesystems},
+  urldate = {2026-03-07},
+  note    = {GitHub Wiki, last edited by Gabriel Burca on 2025-01-18}
 }
 
 @manual{stat.3type_manpage,
@@ -241,6 +305,15 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
     date = {2026-02-14},
     version = {0.17.0},
     license = {MIT},
+}
+
+--- bento ---
+@inproceedings{miller2021high,
+  title={High velocity kernel file systems with bento},
+  author={Miller, Samantha and Zhang, Kaiyuan and Chen, Mengqi and Jennings, Ryan and Chen, Ang and Zhuo, Danyang and Anderson, Thomas},
+  booktitle={19th USENIX Conference on File and Storage Technologies (FAST 21)},
+  pages={65--79},
+  year={2021}
 }
 
 --- FATFS ---
