@@ -184,10 +184,41 @@ Concurrency, while ubiquitous, brings many implementational challenges in modern
 C, for example, declares every data race @UB. @c_standard
 Rust differs from these in that it leverages the type systems to make certain guarantees in concurrent programming, namely that data races cannot occur.
 
-Data races happen when data is shared mutably between threads without proper synchronization, mutably meaning more than one thread has the means of modifying the state.
+Data races happen when data is shared mutably between threads without proper synchronization, mutably meaning more than one thread has the means of modifying the state. @10.5555_998680.1006709 @linux-kernel-memory-barriers
 Since execution order of instructions between multiple threads is undefined, when multiple threads attempt to change the shared data at the same time, the outcome --- the state of the shared data --- is also undefined.
+This arises simply from the fact that reads and writes from the different threads can be interleaved arbitrarily and nondeterministically by the processor, resulting in operations that seem atomic or sequential to the programmer being interrupted or reordered.
 /* @ask stefan example? */
-/* @ask mehr eingehen auf parallel/concurrent/async/thread/task/foo */
+/* _ask mehr eingehen auf parallel/concurrent/async/thread/task/foo? => no, its ok */
+
+@data_race_example shows a simple case of a data race.
+Picture the `counter()` function running concurrently in two threads.
+Each instance has the goal of increasing the global counter by one, a million times.
+Yet, as we execute this program multiple times, different values will be reached, ranging from 1,000,000 to 2,000,000.
+This is due to operation reordering: since an increment is internally a sequence of "read value" -> "increase" -> "write value", when these instructions get interleaved, multiple threads interfere with each others incrementation, leading to loss of writes.
+
+#figure(
+  ```rust
+  static mut COUNTER: usize = 0;
+
+  fn counter() {
+    for i in 0..1_000_000 {
+      unsafe {
+        COUNTER += 1;
+      }
+    }
+  }
+
+  pub fn main() {
+    let t1 = std::thread::spawn(&counter);
+    let t2 = std::thread::spawn(&counter);
+
+    println!("{COUNTER}");
+  }
+  // ...
+  ```,
+  caption: [Excerpt from the `readdir` trampoline, passing the Rust vector of directory entries into the C filler function.],
+) <data_race_example>
+
 
 Since data races can lead to program states that are hard to reason about, automatic prevention would be beneficial to the development process. @rust-reference-1.92
 By encoding the "concurrent-safe-ness" of data types in the type system, Rust brings about such a mechanism.
@@ -198,7 +229,7 @@ Manually implementing them requires an unsafe block, since it is up to the progr
 on the other side, types only consisting of ```rust Send```/```rust Sync``` members can have their ```rust Send```/```rust Sync```-ness derived automatically via a macro.
 
 As a side note it should be mentioned that while safe Rust guarantees freedom of data races, code races or deadlocks can still happen.
-It is assumed that these cannot be prevented in sufficiently powerful languages, as that would require checking every possible combination of thread execution states, which is NP-complete in recursion to the halting problem. /* @ask stefan kann ich das so sagen? ':D */
+We assume that these cannot be prevented in sufficiently powerful languages, as that would require checking every possible combination of thread execution states, which is NP-complete in recursion to the halting problem.
 
 === Error handling
 
@@ -264,7 +295,7 @@ It lifts the requirement of filesystems being kernel modules, which meant they r
 Additionally, installing a new kernel module involves a great amount of additional work:
 At best, the module has to be compiled via @DKMS against every kernel in use by target machines.
 At worst, a copy of the kernel source code has to be maintained with the filesystem module added, and on every upstream kernel update the whole kernel has to be recompiled.
-Kernel modules also operate under a strict subset of available tools and resourcers, and are more complex to program, which increases development costs/* FIXME cite? */.
+Kernel modules also operate under a strict subset of available tools and resources, and are more complex to program, which increases development costs @miller2021high.
 Being able to write filesystems as generic userspace programs can therefore yield various benefits.
 
 The FUSE project replaces the need for a distinct kernel module per filesystem by providing a general module, which the userspace daemon then communicates with.
@@ -308,8 +339,8 @@ This creates the illusion that implementing a filesystem is nothing more than pr
 - ?? file provenance tracking ??
 @miller2021high
 
-#cite(<miller2021high>) propose a problem space similar to our work: filesystem development is tedious, because kernel modules are hard to debug; a filesystem kernel module crashing the system through bugs is also suboptimal.
-Having said that, in their evaluation FUSE falls short because of significant overhead introduced into metadata-heavy workloads --- such as `git clone` of big repositories --- which incentivized them to develop a novel solution.
+#cite(<miller2021high>, form: "prose") propose a problem space similar to our work: filesystem development is tedious, because kernel modules are hard to debug; a filesystem kernel module crashing the system through bugs is also suboptimal.
+Having said that, in their evaluation FUSE falls short because of significant overhead introduced into metadata-heavy workloads --- such as `git clone`#footnote[https://git-scm.com/docs/git-clone] of big repositories --- which incentivized them to develop a novel solution.
 Bento is a framework for developing Linux filesystems that plugs into the @VFS kernel component and provides a sandbox for filesystem implementations written in Rust.
 Modules using this framework can be loaded, reloaded and updated without interrupting userspace work, and have their crashes isolated from the rest of the kernel, increasing resilience to filesystem bugs.
 
@@ -318,15 +349,15 @@ Modules using this framework can be loaded, reloaded and updated without interru
 `rust-fatfs` is a Rust reimplementation of the FAT filesystem family created by Microsoft.
 FAT (File Allocation Table) was originally created in 1977, with the newest variant --- `FAT32` --- initially published 1996.
 Despite that, it stays relevant until today, as it is often used in technically constrained environments, where it is preferred for its comparatively simple structure and implementation.
-For this reason, it is relied upon by digital cameras for their dedicated storage cards, and as filesystem for the boot partition in the UEFI specification.#cite(<uefi_spec_2_11_2024>, supplement: "p. 462")@microsoft_kb_q154997_fat32__mirror@ecma_107_1995_pdf
+For this reason, it is relied upon by digital cameras for their dedicated storage cards, and as filesystem for the boot partition in the UEFI specification #cite(<uefi_spec_2_11_2024>, supplement: "p. 462") @microsoft_kb_q154997_fat32__mirror@ecma_107_1995_pdf.
 /* FIXME mit nennung von autor zitieren. *//* FIXME bissel mehr über FAT. vlt statistiken, warum relevant. */
 
 `rust-fatfs` implements the `FAT12`, `FAT16` and `FAT32` members of the FAT family. It is implemented as a kernel module, whereas our library lives in userspace with the usage of FUSE. The authors were motivated by lack of existing filesystem kernel modules written in Rust, as well as a general interest in Rust given its recent rise in popularity regarding the linux kernel, and its promising safety features.
-`rust-fatfs` was solely evaluated from a performance perspective, with the authors measuring the number of instructions executed during sample workloads, run inside a VM. These metrics are compared to the established C kernel module. We did not consider empirical performance analysis, and focus on which kinds of CVEs can be prevented.@Oikawa2023
+`rust-fatfs` was solely evaluated from a performance perspective, with the authors measuring the number of instructions executed during sample workloads, run inside a VM. These metrics are compared to the established C kernel module. We did not consider empirical performance analysis, and focus on which kinds of CVEs can be prevented @Oikawa2023.
 
 == `fuser`
 
-The `fuser` crate, maintained by GitHub user `cberner`, is currently the most used FUSE bindings crate on `crates.rs`, counting over 150k downloads per month, and over 1k stars on GitHub./* FIXME @ask how to quote */
+The `fuser` crate, maintained by GitHub user `cberner`, is currently the most used FUSE bindings crate on `crates.rs`, counting over 150k downloads per month, and over 1k stars on GitHub @fuser_docs.
 It is not an academic project, but a practical solution for integrating FUSE into the Rust ecosystem, thereby leveraging the advantages of Rusts architecture for filesystem development.
 While our goals are not conceptually different as a whole, there is no explicit focus on security.
 Types are modeled very closely to the underlying C architecture, although users aren't forced to create C ABI compatible functions, since that --- like in our solution --- is abstracted away.
@@ -415,7 +446,7 @@ This makes reviewing the @soundness property of unsafe code easier. /* FIXME quo
 Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
 1. No dereferencing of @dangling or #gls("alignment", display: "unaligned") pointers.
-  This is obvious, since these requirements stem from the underlying hardware, and C also declares them invalid.@c_standard#cite(<rust-reference-1.92>, supplement: "ch. 17.2")
+  This is obvious, since these requirements stem from the underlying hardware, and C also declares them invalid @c_standard#cite(<rust-reference-1.92>, supplement: "ch. 17.2").
 2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
   This is needed to provide same of Rusts safety guarantees: data races, use-after-free errors and iterator invalidation are all inherently impossible without shared mutable state.
 3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
@@ -445,7 +476,7 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
 
 === Strings and Unicode <ch_strings_unicode>
 
-Rust's native string types (`str`, `String`) exclusively store UTF-8.#cite(<rust-book>, supplement: "ch. 8.2")
+Rust's native string types (`str`, `String`) exclusively store UTF-8 #cite(<rust-book>, supplement: "ch. 8.2").
 The main kind of strings this library needs to handle are the file paths that filesystem callbacks are called on.
 The encoding of those is platform-dependent, usually being C-like ASCII strings on Unix-like systems and UTF-16 on newer Windows versions. /* TODO cite, stefan sagt "since nt und das ist != newer" */
 Correctly detecting and handling string encodings is a hard problem  /* MAYBE cite? */, and since UTF-8 is a superset of ASCII, we chose to not handle UTF-16 or other cases and emit an error when encountering non-UTF-8 input. This limits the complexity of the prototype without limiting the scope of the reseach question.
@@ -461,7 +492,7 @@ Correctly detecting and handling string encodings is a hard problem  /* MAYBE ci
 
 When a Rust program is compiled with stack unwinding support and a @panic is triggered, the default uwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data. /* FIXME lookup & cite? */
 In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
-Doing so correctly is a non-trivial task and can easily lead to @UB.#cite(<rust-reference-1.92>, supplement: "ch. 14")
+Doing so correctly is a non-trivial task and can easily lead to @UB #cite(<rust-reference-1.92>, supplement: "ch. 14").
 On the other hand, turning unwinding off causes helpful stack traces and debug information to be lost when a @panic occurs.
 We therefore decided to keep unwinding behaviour while preventing any panic from propagating across an FFI boundary.
 
@@ -479,7 +510,7 @@ The crate thereby takes a stance typical of Rust philosophy: it is preferable to
 
 While preventing panics in self-maintained code requires careful manual analysis, this is not possible for user-provided functions.
 For this, there exists a function ```rust panic::catch_unwind()```@rust-std-1.92 that takes a closure and executes it, catching any unwind that would occur and returning an error instead.
-Wrapping the call to user code inside this function ensures that no panic will be propagated up the call stack from this point on.@catch_unwind
+Wrapping the call to user code inside this function ensures that no panic will be propagated up the call stack from this point on @catch_unwind.
 
 #figure(
   ```rust
@@ -546,25 +577,21 @@ It's the users job to create an instance of `struct Stat` and pass it back to us
 
 === readdir
 
-This function's job is, given a directory as path, provide a list of child entries, enabling directory content listing (as e.g. in the `ls` command). An offset can be provided to support partial listings over multiple calls, however we chose to ignore this, as is allowed in the documentation.#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html")
+This function's job is, given a directory as path, provide a list of child entries, enabling directory content listing (as e.g. in the `ls` command). An offset can be provided to support partial listings over multiple calls, however we chose to ignore this, as is allowed in the documentation #cite(<libfuse_docs>, supplement: "p. structfuse__operations.html").
 
 There exists an alternative, more complex mode, which we could have chosen to support: Implement the additional `opendir` operation to open the directory to enumerate as a file descriptor. Then, `readdir` is called on the active file descriptor, providing a view of the directory that is guaranteed to be the same as when `opendir` was called. This was deemed unneccessary to explore the given research questions, and skipped subsequently.
 
 The API is designed, so that the `readdir` implementation doesn't just return, or write into, an array of entries.
 Instead, a function pointer to a "filler" function is provided.
 Our operation has to call this function for every entry.
-Some of the filler functions parameters correspond to entry metadata, others, like a pointer to an opaque data buffer, have to be forwarded.@readdir_filler_fn#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html")
+Some of the filler functions parameters correspond to entry metadata, others, like a pointer to an opaque data buffer, have to be forwarded @readdir_filler_fn#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html").
 
-/* FIXME @ask statt dem ersten und letzten codeblock: 1 zeile comment "// converting string" "// checking error". for brevity? */
 #figure(
   ```rust
   // ...
   for entry in entries {
       let entry_as_c_string = try_errno!(CString::new(entry.clone()).map_err(|e| {
-          (
-              format!("converting dir entry '{entry}' into a C string: {e:#}"),
-              Errno::EIO,
-          )
+          // convert Rust string to C string
       }));
       debug!(?path, "filling entry '{entry}'");
       let fill_result = unsafe {
@@ -578,10 +605,7 @@ Some of the filler functions parameters correspond to entry metadata, others, li
       };
 
       if fill_result != 0 {
-          bail_errno!(
-              format!("filler_fn returned non-zero for '{entry}': {fill_result}"),
-              Errno::EIO
-          );
+          // propagate errno
       }
   }
   // ...
@@ -599,12 +623,12 @@ Again, an optional `fuse_file_info` struct pointer is provided, which we can ign
 
 Dealing with the size and offset parameters provided a challenge. While the requested size parameter is of type `size_t`, which is usually defined as 64-bit integer on modern systems to be used for indexing memory, we have to return the actual amount of read bytes as signed 32-bit integer.
 As such, we can only signal successful reads of up to $$2^31 - 1$$ bytes.
-Further investigation showed that maximum read size is limited by the Linux kernel#cite(<read.2_manpage>), so the limitation in the API seems reasonable, assuming other operating systems impose similar limits.
+Further investigation showed that maximum read size is limited by the Linux kernel #cite(<read.2_manpage>), so the limitation in the API seems reasonable, assuming other operating systems impose similar limits.
 We therefore have to carefully check if the input parameter is inside the allowed range, and convert between the respective integer types, in addition to the usual checks.
 Furthermore, Rust does not provide a native method of specifying an upper bound for a vector length as part of the type signature, so manual checks are required after the user code returns the data. Dependent types or refinement types would be a possible solution, but are not available in Rust aside from research projects. /* FIXME sources */
 
 If the size checks pass, a pointer copy is issued, for which Rust STD provides a function.
-Because we use `unsafe`, we documented the assumptions made and invariants we checked, as is common practice.@read_copy_nonoverlapping
+Because we use `unsafe`, we documented the assumptions made and invariants we checked, as is common practice @read_copy_nonoverlapping.
 
 #figure(
   ```rust
@@ -680,11 +704,9 @@ This has the drawback of only allowing one instance of a concrete `Filesystem` t
 
 Creating thin high-level representations of the low-level data types that make up the @libfuse API, that nonetheless verify as many correctness properties as possible, is the main focus of this project.
 Where feasible, these properties are checked during compile-time, which gives the additional advantage of not impacting runtime performance.
-Otherwise, runtime checks are emitted to still provide correctness, but at the disadvantage of producing runtime errors instead of halting compilation, which increases development cost. /* MAYBE cite */
-/* _FIXME @end auch in "future work"? stefan: prob zu klein, hier lassen. */It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
+Otherwise, runtime checks are emitted to still provide correctness, but at the disadvantage of producing runtime errors instead of halting compilation, which increases development cost @boehm1984software.
+It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
 Due to the goals of this work, and time constraints, this was mostly skipped.
-
-// FIXME @ask genug?
 
 === Typed builder
 
@@ -915,7 +937,7 @@ TODO /* FIXME quote */
 
   [2024-55641],
   [When quota reservation on XFS fails due to IO errors shutting down the filesystem, inodes were mistakenly not unlocked during cleanup.],
-  [Implementing inodes in Rust can make use of the `Drop` trait, automatically unlocking them as they go out of scope.#footnote[see also _RAII_]],
+  [Implementing inodes in Rust can make use of the `Drop` trait, automatically unlocking them as they go out of scope #footnote[see also _RAII_].],
   [🟢],
 
   [2024-45003],
@@ -961,11 +983,11 @@ TODO /* FIXME quote */
 
 // hier CVEs auswerten, vlt oben in Methodology schon konkret auflisten
 == A prototype filesystem: `hello2` <ch_prototype>
-// FIXME @ask geht das in die richtige richtung?
+// FIXME _ask geht das in die richtige richtung?
 // - stefan: vlt noch mehr, alles was ich gemacht hab geht in die richtige richtung.
 
 To test our wrapper library, we created a minimal filesystem using it.
-It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem.#cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html")
+It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem #cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html").
 
 This filesystem is read-only, since that narrows down the functionality we have to implement.
 Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content.
@@ -981,7 +1003,7 @@ Most low-level details and pitfalls were abstracted away.
 One aspect that required a disproportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
 This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
 
-// FIXME @ask more?
+// FIXME @ask more? - why not
 
 #figure(
   ```rust

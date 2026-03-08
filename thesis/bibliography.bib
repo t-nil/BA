@@ -169,6 +169,40 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
   date       = {2025-09-10},
 }
 
+@article{boehm1984software,
+  title={Software engineering economics},
+  author={Boehm, Barry W},
+  journal={IEEE transactions on Software Engineering},
+  number={1},
+  pages={4--21},
+  year={1984},
+  publisher={IEEE}
+}
+
+https://www.kernel.org/doc/Documentation/memory-barriers.txt
+
+@inproceedings{10.5555_998680.1006709,
+  author = {Cain, Harold W. and Lipasti, Mikko H.},
+  title = {Memory Ordering: A Value-Based Approach},
+  year = {2004},
+  isbn = {0769521436},
+  publisher = {IEEE Computer Society},
+  address = {USA},
+  abstract = {Conventional out-of-order processors employ a multi-ported,fully-associative load queue to guarantee correctmemory reference order both within a single thread of executionand across threads in a multiprocessor system. Asimprovements in process technology and pipelining lead tohigher clock frequencies, scaling this complex structure toaccommodate a larger number of in-flight loads becomesdifficult if not impossible. Furthermore, each access to thiscomplex structure consumes excessive amounts of energy.In this paper, we solve the associative load queue scalabilityproblem by completely eliminating the associative loadqueue. Instead, data dependences and memory consistencyconstraints are enforced by simply re-executing loadinstructions in program order prior to retirement. Usingheuristics to filter the set of loads that must be re-executed,we show that our replay-based mechanism enables a simple,scalable, and energy-efficient FIFO load queue designwith no associative lookup functionality, while sacrificingonly a negligible amount of performance and cache bandwidth.},
+  booktitle = {Proceedings of the 31st Annual International Symposium on Computer Architecture},
+  pages = {90},
+  location = {M\"{u}nchen, Germany},
+  series = {ISCA '04}
+}
+
+@online{linux-kernel-memory-barriers,
+  author  = {Howells, David and McKenney, Paul E. and Deacon, Will and Zijlstra, Peter},
+  title   = {Linux Kernel Memory Barriers},
+  url     = {https://www.kernel.org/doc/Documentation/memory-barriers.txt},
+  urldate = {2026-03-08},
+  organization = {The Linux Kernel Organization}
+}
+
 --- CVEs ---
 
 @online{MannChristey1999TowardsCVE,

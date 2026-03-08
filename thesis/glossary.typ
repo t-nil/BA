@@ -85,7 +85,7 @@
   ),
   (
     key: "VFS",
-    long: "the Virtual File System layer",
+    long: "Virtual File System layer",
     description: "the part of the Linux kernel that abstracts between filesystems and the rest of the system",
   ),
   (
