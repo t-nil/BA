@@ -1021,7 +1021,35 @@ This could be made possible as an additional opt-in API, but would almost certai
 
 = Conclusion
 
+In this thesis, we explored the benefits of a strong type system regarding safety in operating system programming, by the examples of Rust and filesystems.
+This combination is of particular relevance, given the recent Linux kernel developments in that same direction /* FIXME cite */, and the multitude of publications regarding safe system development in Rust /* FIXME @ask stefan: einfach nochmal die ganzen papers als refs dumpen? darf ich das dann einfach so sagen? */.
+Strong type systems allow modeling contracts around APIs and data structures inside the code, which makes them automatically verifiable by static analysis.
+This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
+We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that isn't possible.
+We collected design principles for safe system programming and methodically applied them to the chosen subset of filesystem operations necessarry for a minimal filesystem implementation.
+We then evaluated a sample of @CVE:pl from the linux kernel filesystem subsystems over the past five years, assessing if --- and to what degree --- these vulnerabilities would have been prevented with the method we described.
+A minimal filesystem in Rust was created, both to test the practical viability and improve the development phase of our wrapper library, and to give a qualitative assessment of safety and ergonomy aspects of the API.
+
+We found that our approach could in fact increase the safety of filesystems currently included in the Linux kernel.
+Furthermore, since most improvements were implemented as compile-time verifications, it can be assumed that their runtime impact will be nonexisting, acknowledging the need for @OS routines to be maximally performant.
+We estimate that a substantial amount of security and safety issues could be prevented in the future by gradually moving kernel subsystems and modules to languages with strong type system guarantees.
+
+// FIXME:
+// - ich merk grad, ich mach ja wirklich wenig zu memory safety. in erster linie gehe ich immer auf die tollen typsystem sachen ein. soll ich memory safety ejetz hier überhaupt erwähnen, oder insgesamt vlt mehr?
+// - vlt sollte ich doch nen abschnitt machen, wo ich strong/strict type systems mal sauber definiere. *oder hab ich das schon? O_o*
+
 == Limitations
+
+// memory unsafety of environment (<-> direct kernel module below)
+
+// *bounded integer compile-time*
+
+// *panics*
+Panics in Rust are unfortunately not part of 
+
+// error reporting, impl Try<> for Errno
+
+// FUSE LL-api, direct socket comm., direct kernel module
 
 // TODO more low-level, still as much safety?
 

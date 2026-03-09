@@ -24,9 +24,14 @@
 //!
 //!
 //! # Tags
+//! - NEXT
+//! - …
 //! - TODO
 //! - FIXME
 //! - MAYBE
+//! - EXTRA
+//! - STYLE
+//! - REFACTOR
 //! - OUTLOOK
 //! - INVALID
 //!
