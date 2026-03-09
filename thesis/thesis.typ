@@ -136,6 +136,7 @@ And since the APIs are quite similar, approaches found to be working when modeli
 
 = Background
 
+// FIXME paar sätze als überleitung
 // alle wahrsch. auch wichtig bei Motivation
 @jung2020safe
 @10.1145_3102980.3103006
@@ -409,7 +410,7 @@ The CVE (Common Vulnerabilities and Exposures) system is an internationally acce
 For evaluation, we collect a sample of recent recorded CVEs from the Linux kernel filesystem subsystem.
 This e.g. includes the @VFS and several shipped filesystem implementations.
 We utilize a search mask for the National Vulnerability Database#footnote[https://nvd.nist.gov/] for filtering the relevant data.
-Each CVE from the sample is then analyzed and sorted into three categories:
+Each CVE from the sample is then analyzed and sorted into three categories:/* FIXME table */
 - Could have been prevented using our method (🟢)
 - Could partially have been prevented / could have been prevented under certain circumstances (🟡)
 - Could not have been prevented (🔴)
@@ -825,7 +826,7 @@ Since all intermediate types are specializations of a general builder type, ther
 
 While a typestate builder has many advantages in statical correctness, conditional branches can be difficult to handle.
 That is because every state of the builder is effectively a different type, and Rust doesn't allow items to have different types depending on a branch.
-This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value /* FIXME example */.
+This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value/* FIXME example */.
 Runtime builders don't have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
 
 Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known, and flexibility with runtime checks, when it's not.
@@ -1022,7 +1023,7 @@ This could be made possible as an additional opt-in API, but would almost certai
 = Conclusion
 
 In this thesis, we explored the benefits of a strong type system regarding safety in operating system programming, by the examples of Rust and filesystems.
-This combination is of particular relevance, given the recent Linux kernel developments in that same direction /* FIXME cite */, and the multitude of publications regarding safe system development in Rust /* FIXME @ask stefan: einfach nochmal die ganzen papers als refs dumpen? darf ich das dann einfach so sagen? */.
+This combination is of particular relevance, given the recent Linux kernel developments in that same direction /* FIXME cite => einfach Rust in Linux kernel */, and the multitude of publications regarding safe system development in Rust /* FIXME _ask stefan: einfach nochmal die ganzen papers als refs dumpen? darf ich das dann einfach so sagen? => YES */.
 Strong type systems allow modeling contracts around APIs and data structures inside the code, which makes them automatically verifiable by static analysis.
 This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
 We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that isn't possible.
@@ -1038,22 +1039,54 @@ We estimate that a substantial amount of security and safety issues could be pre
 // - ich merk grad, ich mach ja wirklich wenig zu memory safety. in erster linie gehe ich immer auf die tollen typsystem sachen ein. soll ich memory safety ejetz hier überhaupt erwähnen, oder insgesamt vlt mehr?
 // - vlt sollte ich doch nen abschnitt machen, wo ich strong/strict type systems mal sauber definiere. *oder hab ich das schon? O_o*
 
+// @ask löhr: limitations chapter really needed?
 == Limitations
 
-// memory unsafety of environment (<-> direct kernel module below)
-
-// *bounded integer compile-time*
-
-// *panics*
-Panics in Rust are unfortunately not part of 
-
 // error reporting, impl Try<> for Errno
+// (code example in https://play.rust-lang.org/?version=stable&mode=debug&edition=2024&gist=eb8d6f8b78056f69ae98f40cd555804f) - @ask stefan: noch reinpacken? impl Try wird das ganze allerding aufblähen
+The current mechanism of handling errors and propagating them to @libfuse is not ideal.
+Specifically, while we provide the API user with an idiomatic error type --- Rust's ```rust Result``` --- @libfuse still expects a raw `errno` be returned to signal the type of failure.
+A way to work around this is provided with the ```rust Try``` trait, which, when implemented on a custom type, can override the way in which error propagation on the short-circuit `?` operator is handled @rust-std-1.92.
+Implementing this trait for a custom ```rust enum ErrnoResult<T> { Ok(T), Err(Errno) }``` along with a proper conversion ```rust impl<T> From<ErrnoResult<T>> for i32 {}``` would, in theory, enable an automatic conversion, such that simply using the `?` operator on fallible fuctions inside the @trampoline_function:pl would correctly propagate an `i32`-encoded errno.
+Unfortunately, the ```rust Try``` trait is still unstable, which means its interface could change any Rust release and it is not usable while staying on the stable toolchain.
+Therefore, and due to time constraints, the macro solution was implemented instead.
+
+// // memory unsafety of environment (<-> direct kernel module below)
+Although one of our goals was to minimize the chance of memory faults, for which Rust brings an outstanding toolkit, the choice for using the FFI and interfacing into C code proved an obstacle to that.
+User code gets handed exclusively Rust-owned objects and references, where the borrow checker guarantees no memory unsafety on successful compilation.
+Our wrapper library, however, has to handle a large amount of pointer parameters directly from @libfuse, where not all criteria for safe, defined memory operations can be validated.
+Our current model is therefore to trust @libfuse and the pointers we are passed.
+Additionally, it has proven impossible to correctly generate references with appropriate lifetimes from raw pointers.
+As a practical solution, and to reduce the number of bugs that could have been introduced through our wrapper in using this method, we opted instead to create owned Rust objects from C parameters through copying.
+This introduces some overhead, although in practice the effect could be diminishingly small --- memory copies are usually very fast on modern machines --- and should be measured before taken into account.
+
+= Future work
 
 // FUSE LL-api, direct socket comm., direct kernel module
 
-// TODO more low-level, still as much safety?
+The beforementioned problem with memory safety and C inter-operation could have been circumvented --- or at least greatly reduced --- by choosing a different approach for our general architecture.
+Rather than implementing a wrapper for the official C library, alternatives could have been talking to the FUSE socket directly through their message protocol, or implementing our own kernel module in Rust.
+This was deemed out-of-scope, since the development efford would have been substantially increased.
 
-= Future work
+// *bounded integer compile-time*
+A significant portion of the modeled types involved bounded integers, or integers that can only lie in a specific range of values, known at compile time.
+To this date, Rust does not include builtin types that allow such range constraints, much less some that can compile-time check their constraints.
+Rust has limited support for "const generics", where the generics systems allows primitive values in addition to type parameters @rust-reference-1.92.
+This can be used to create support for such bounded types.
+#cite(<bounded_integer_docs>, form: "prose") have created such a crate.
+A provisional inspection asserted that constant constructors for the types in question are being generated, thus it is assumed that this crate would in fact bring compile-time bounded integers to our API.
+This could for example have been used to limit the ```rust struct FilePermission(u16)```, to form a ```rust struct FilePermission(BoundedU16<0, 0o777>)``` or a ```rust bounded_integer! { struct FilePermission(0, 0o777); }``` which could then be instanciated with ```rust FilePermission::new_const(0o42)```.
+Failure to uphold the range limits would then result in a compiler error.
+
+// maybe ein absatz über mehr CVEs evaluieren
+Since the goal of this thesis was to evaluate the effect of modern languages with strong type systems on system programming, limiting our evaluation to filesystems creates a weak evidential basis.
+A future project could broaden the filter mask for CVEs, and take into consideration both other @OS:pl and other subsystems of the Linux kernel.
+Selecting a greater time span would also be possible.
+
+// *panics*
+Panics in Rust are unfortunately not part of
+
+// static analyzers / sanitizers
 
 #bibliography("bibliography.bib", style: "ieee")
 
