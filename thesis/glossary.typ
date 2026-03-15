@@ -58,6 +58,10 @@
     description: "TODO",
   ),
   (
+    key: "monomorphization",
+    description: "The process during Rust compilation to generate concrete non-generic functions for each instance of a generic function in the source code. Monomorphized functions don't have any generic arguments left.",
+  ),
+  (
     key: "POSIX",
     long: "the POSIX standard",
   ),
