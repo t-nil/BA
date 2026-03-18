@@ -225,14 +225,20 @@ In Rust, values are, by default, moved instead of copied.
 In fact, making a type copy-able involves implementing a special trait (```rust Clone```), while moving values is core to the type system and automatically available for every type.
 In contrast, types are memory-copied by default in C++, and must manually influence or prohibit that behavior @cppreference.
 Moving values was introduced in C++ 11 and has to be enabled manually.
-This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear/* FIXMEE bessere ref? nicht mathe paper, was praktisches */.
-
+This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear/* FIXME bessere ref? nicht mathe paper, was praktisches */.
+Since types can be "consumed", ergo moved into a consuming function without being returned, these consuming functions or methods can be used to implement resource management that would otherwise be difficult to do correctly.
+For example, a file handle can be closed, which would render any I/O operation on it ineffectual and would usually lead to an error.
+In languages where values are copied by default or can be copied without limitations, this creates inconsistencies: If the handle is copied, then one copy closed, how should the second copy behave? How can a user of the API guarantee that the handle is not used after closing, if it could have been copied a number of times?
+This problem can be managed by manually implementing checks on the handle type, usually with the help of shared memory and synchronization.
+Alternatively, if the language provides ways to limit arbitrary copying, these limits can be carefully implemented.
+But the default still leaves room for errors and makes the copy case more ergonomic by definition.
+In Rust, these questions don't arise, since the file handle type would simply not implement the ```rust Clone``` trait and every function with a value parameter of ```rust FileHandle``` would automatically consume this parameter, rendering it unusable in the caller site.
 
 
 === No data races and fearless concurrency
 
 Concurreny is an important aspects of today's software.
-Single maschines usually have several physical processor cores, and programs wanting to take advantage of the hardware capabilities need to deal with some variant of concurrency.
+Single machines usually have several physical processor cores, and programs wanting to take advantage of the hardware capabilities need to deal with some variant of concurrency.
 Furthermore, even not hitting hardware limitations, modern software usually consists of multiple distinct subroutines --- rendering a GUI, receiving events, working calculations, providing an API --- that are desired to run simultaneously, lest responsivity and latency suffer, and with it the user experience.
 This is also true for @OS code and filesystems, as these too must take advantage of modern computer architecture to deliver performance goals.
 A filesystem on a typical modern computer can expect many different programs to concurrently access different files, or even use the filesystem for inter-process communication.
