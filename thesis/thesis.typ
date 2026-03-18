@@ -1,3 +1,12 @@
+// # Missing chapters
+// - Background/Rust/Typesystem
+// - Background/Rust/Lifetimes
+// - Bento
+// - Rust for Linux
+// - Implementation (top-level)
+// - TypedBuilder (a bit of a rework) + some of the data types
+// - Eval/CVEs
+//
 // # GLOBAL TODOS
 // - [x] fix glossary keys being displayed when no short variant exists
 // - [x] fix "ich/mein/mir/mich"
@@ -15,7 +24,6 @@
 // - template
 //   - [ ] english translation
 //   - refs auf unterkapitel werden eh nicht übersetzt -> consistency (siehe einleitung.schluss)
-//
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
@@ -48,7 +56,6 @@
 
 - Rust is increasing usage in system level
 - but still many big projects (linux etc.) are written in C
-
 
 Since the beginning of computer programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
 For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
@@ -171,17 +178,56 @@ compared to C, it incorporates numerous improvements aimed at increasing safety 
 
 === Type system
 
+@MILNER1978348 @WRIGHT199438
+
+@jung2020safe @10.1145_3360573
 // TODO more in-depth
 
-Rust features a
+Rust's type system, or rather the specific properties thereof, are an important factor for its usability in correctness-centered software.
+We will focus on two important characterizations of a type system: static vs. dynamic, and strong vs. weak.
+We define (as seen in #cite(<10.1145_942572.807045>, form: "prose")) a strong type system as a system where every function that expects a certain type of parameter will only accept parameters of that type.
+In other words, the less implicit type conversions are performed by a type system, the stronger it is deemed.
+In contrast, weak type systems perform many implicit conversions.
+Static type systems, as previously defined in #cite(<10.1145_942572.807045>, form: "prose", supplement: "p. 474f"), have the ability to calculate types of all values during compilation, and can therefore statically verify type correctness.
+In dynamic type systems, the concrete types of values are indeterminate during compile-time and the compiler will emit the necessary runtime checks that result in execution errors when a type mismatch happens.
 
-=== Lifetimes and ownership
-- zero overhead
-- makes use-after-free and buffer overflows impossible
--
+We value the strength of a type system highly, because it provides us with the foundational guarantees on which the higher-level contracts can be expressed.
+For example, given we want to enforce that a file handle be in a specific, well defined state (open, writable) before writing to it, with a weak type system, we would have two possible scenarios for inconsistency: the file handle implicitly converting into another type, which potentially doesn't check those contractual assertions, and a value of another type implicitly converting into a file handle, where the conversion itself possibly circumvents some checks.
+Additionally, strong type systems can prevent bugs of a certain class, where the wrong value is passed into a function, if that value has a different type.
+The weaker the type system, the more implicit conversions may accidentally trigger, which would make the program compile without catching the type error.
+This is not to say that all implicit conversions are inherently bad, but they pose certain risks and are usually hindering when trying to reason about program code, since every possible place where an implicit conversion could take place exponentially adds possible states that must be considered.
+On the other hand, implicit conversions can lead to more concise code and can reduce boilerplate, which, when applied correctly, can improve readability and ability to reason about code effects.
+Ergo a middle ground should be found.
+
+Rust takes a strong design stance in that regard #cite(<rust-reference-1.92>, supplement: "ch. 10.7").
+The language philosophy is to use as little implicit conversions as possible, to limit the amount of "surprises" encountered when reasoning about code effects.
+This is a design principle that aligns well with our goals.
+
+The aspect of static vs. dynamic type checking is also of importance for our thesis.
+Dynamic type checking would bring two disadvantages in this case.
+First, type errors are reported not during development, but during actual code execution.
+This not only delays the bug finding process, but also requires that every part of the program be executed during testing to ensure correctness.
+Second, since we aim to enhance type checking to also maintain our higher-level invariants, this comes at the cost of additional logic.
+Whereas static type checking would run this logic only during compilation, dynamic type checking leads to runtime overhead, which is usually a critical property of system code, to be reduced whenever possible.
+
+Rust is a predominantly statically typed language, with optional dynamic typing (see #cite(<rust-reference-1.92>, form: "prose", supplement: "10.1.15")) by the name of "trait objects".
+This is consistent with other high-level languages, like C++ #cite(<cppreference>, supplement: [section "Type"]).
+This gives us the flexibility to fall back to dynamic typing whenever necessary, while having a rich toolset available for expressing type constraints in a static, compiler-verified fashion.
+
 // a.k.a. borrow checker :sunglasses:
 
 // mention RAII and ```rust Drop``` trait
+
+=== Borrow checker, lifetimes and ownership
+
+One of the core improvements made by Rust in the area of static correctness is its memory model, centered around ownership, static reference tracking and reference lifetime @10.1145_3360573.
+In Rust, values are, by default, moved instead of copied.
+In fact, making a type copy-able involves implementing a special trait (```rust Clone```), while moving values is core to the type system and automatically available for every type.
+In contrast, types are memory-copied by default in C++, and must manually influence or prohibit that behavior @cppreference.
+Moving values was introduced in C++ 11 and has to be enabled manually.
+This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear/* FIXMEE bessere ref? nicht mathe paper, was praktisches */.
+
+
 
 === No data races and fearless concurrency
 
@@ -1037,7 +1083,7 @@ This combination is of particular relevance, given the recent Linux kernel devel
 Strong type systems allow modeling contracts around APIs and data structures inside the code, which makes them automatically verifiable by static analysis.
 This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
 We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that isn't possible.
-We collected design principles for safe system programming and methodically applied them to the chosen subset of filesystem operations necessarry for a minimal filesystem implementation.
+We collected design principles for safe system programming and methodically applied them to the chosen subset of filesystem operations necessary, while having a rich toolset  for a minimal filesystem implementation.
 We then evaluated a sample of @CVE:pl from the linux kernel filesystem subsystems over the past five years, assessing if --- and to what degree --- these vulnerabilities would have been prevented with the method we described.
 A minimal filesystem in Rust was created, both to test the practical viability and improve the development phase of our wrapper library, and to give a qualitative assessment of safety and ergonomy aspects of the API.
 

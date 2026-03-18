@@ -1,18 +1,18 @@
 @inproceedings{10.1145_3102980.3103006,
-    author = {Balasubramanian, Abhiram and Baranowski, Marek S. and Burtsev, Anton and Panda, Aurojit and Rakamari\'{c}, Zvonimir and Ryzhyk, Leonid},
-    title = {System Programming in Rust: Beyond Safety},
-    year = {2017},
-    isbn = {9781450350686},
-    publisher = {Association for Computing Machinery},
-    address = {New York, NY, USA},
-    url = {https://doi.org/10.1145/3102980.3103006},
-    doi = {10.1145/3102980.3103006},
-    abstract = {Rust is a new system programming language that offers a practical and safe alternative to C. Rust is unique in that it enforces safety without runtime overhead, most importantly, without the overhead of garbage collection. While zero-cost safety is remarkable on its own, we argue that the superpowers of Rust go beyond safety. In particular, Rust's linear type system enables capabilities that cannot be implemented efficiently in traditional languages, both safe and unsafe, and that dramatically improve security and reliability of system software. We show three examples of such capabilities: zero-copy software fault isolation, efficient static information flow analysis, and automatic checkpointing. While these capabilities have been in the spotlight of systems research for a long time, their practical use is hindered by high cost and complexity. We argue that with the adoption of Rust these mechanisms will become commoditized.},
-    booktitle = {Proceedings of the 16th Workshop on Hot Topics in Operating Systems},
-    pages = {156-161},
-    numpages = {6},
-    location = {Whistler, BC, Canada},
-    series = {HotOS '17}
+  author = {Balasubramanian, Abhiram and Baranowski, Marek S. and Burtsev, Anton and Panda, Aurojit and Rakamari\'{c}, Zvonimir and Ryzhyk, Leonid},
+  title = {System Programming in Rust: Beyond Safety},
+  year = {2017},
+  isbn = {9781450350686},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3102980.3103006},
+  doi = {10.1145/3102980.3103006},
+  abstract = {Rust is a new system programming language that offers a practical and safe alternative to C. Rust is unique in that it enforces safety without runtime overhead, most importantly, without the overhead of garbage collection. While zero-cost safety is remarkable on its own, we argue that the superpowers of Rust go beyond safety. In particular, Rust's linear type system enables capabilities that cannot be implemented efficiently in traditional languages, both safe and unsafe, and that dramatically improve security and reliability of system software. We show three examples of such capabilities: zero-copy software fault isolation, efficient static information flow analysis, and automatic checkpointing. While these capabilities have been in the spotlight of systems research for a long time, their practical use is hindered by high cost and complexity. We argue that with the adoption of Rust these mechanisms will become commoditized.},
+  booktitle = {Proceedings of the 16th Workshop on Hot Topics in Operating Systems},
+  pages = {156-161},
+  numpages = {6},
+  location = {Whistler, BC, Canada},
+  series = {HotOS '17}
 }
 
 @article{jung2020safe,
@@ -203,6 +203,54 @@ https://www.kernel.org/doc/Documentation/memory-barriers.txt
   organization = {The Linux Kernel Organization}
 }
 
+--- Type systems ---
+@article{MILNER1978348,
+  title = {A theory of type polymorphism in programming},
+  journal = {Journal of Computer and System Sciences},
+  volume = {17},
+  number = {3},
+  pages = {348-375},
+  year = {1978},
+  issn = {0022-0000},
+  doi = {https://doi.org/10.1016/0022-0000(78)90014-4},
+  url = {https://www.sciencedirect.com/science/article/pii/0022000078900144},
+  author = {Robin Milner},
+  abstract = {The aim of this work is largely a practical one. A widely employed style of programming, particularly in structure-processing languages which impose no discipline of types, entails defining procedures which work well on objects of a wide variety. We present a formal type discipline for such polymorphic procedures in the context of a simple programming language, and a compile time type-checking algorithm W which enforces the discipline. A Semantic Soundness Theorem (based on a formal semantics for the language) states that well-type programs cannot “go wrong” and a Syntactic Soundness Theorem states that if W accepts a program then it is well typed. We also discuss extending these results to richer languages; a type-checking algorithm based on W is in fact already implemented and working, for the metalanguage ML in the Edinburgh LCF system.}
+}
+
+@article{WRIGHT199438,
+  title = {A Syntactic Approach to Type Soundness},
+  journal = {Information and Computation},
+  volume = {115},
+  number = {1},
+  pages = {38-94},
+  year = {1994},
+  issn = {0890-5401},
+  doi = {https://doi.org/10.1006/inco.1994.1093},
+  url = {https://www.sciencedirect.com/science/article/pii/S0890540184710935},
+  author = {A.K. Wright and M. Felleisen},
+  abstract = {We present a new approach to proving type soundness for Hindley/Milner-style polymorphic type systems. The keys to our approach are (1) an adaptation of subject reduction theorems from combinatory logic to programming languages, and (2) the use of rewriting techniques for the specification of the language semantics. The approach easily extends from polymorphic functional languages to imperative languages that provide references, exceptions, continuations, and similar features. We illustrate the technique with a type soundness theorem for the core of Standard ML, which includes the first type soundness proof for polymorphic exceptions and continuations.}
+}
+
+@article{10.1145_942572.807045,
+  author = {Liskov, Barbara and Zilles, Stephen},
+  title = {Programming with abstract data types},
+  year = {1974},
+  issue_date = {April 1974},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  volume = {9},
+  number = {4},
+  issn = {0362-1340},
+  url = {https://doi.org/10.1145/942572.807045},
+  doi = {10.1145/942572.807045},
+  abstract = {The motivation behind the work in very-high-level languages is to ease the programming task by providing the programmer with a language containing primitives or abstractions suitable to his problem area. The programmer is then able to spend his effort in the right place; he concentrates on solving his problem, and the resulting program will be more reliable as a result. Clearly, this is a worthwhile goal.Unfortunately, it is very difficult for a designer to select in advance all the abstractions which the users of his language might need. If a language is to be used at all, it is likely to be used to solve problems which its designer did not envision, and for which the abstractions embedded in the language are not sufficient.This paper presents an approach which allows the set of built-in abstractions to be augmented when the need for a new data abstraction is discovered. This approach to the handling of abstraction is an outgrowth of work on designing a language for structured programming. Relevant aspects of this language are described, and examples of the use and definitions of abstractions are given.},
+  journal = {SIGPLAN Not.},
+  month = mar,
+  pages = {50–59},
+  numpages = {10}
+}
+
 --- CVEs ---
 
 @online{MannChristey1999TowardsCVE,
@@ -221,6 +269,15 @@ https://www.kernel.org/doc/Documentation/memory-barriers.txt
   title   = {Standards (Using the GNU Compiler Collection (GCC))},
   url     = {https://gcc.gnu.org/onlinedocs/gcc/Standards.html},
   urldate = {2026-03-03},
+}
+
+@online{cppreference,
+  author   = {{cppreference.com}},
+  title    = {cppreference.com},
+  year     = {2025},
+  url      = {https://en.cppreference.com/},
+  urldate  = {2026-03-18},
+  note     = {Last modified 2025-01-09},
 }
 
 @inproceedings{tian2017automatically,
