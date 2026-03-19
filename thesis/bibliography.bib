@@ -26,22 +26,22 @@
 }
 
 @article{10.1145_3360573,
-author = {Astrauskas, Vytautas and M\"{u}ller, Peter and Poli, Federico and Summers, Alexander J.},
-title = {Leveraging rust types for modular specification and verification},
-year = {2019},
-issue_date = {October 2019},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-volume = {3},
-number = {OOPSLA},
-url = {https://doi.org/10.1145/3360573},
-doi = {10.1145/3360573},
-abstract = {Rust's type system ensures memory safety: well-typed Rust programs are guaranteed to not exhibit problems such as dangling pointers, data races, and unexpected side effects through aliased references. Ensuring correctness properties beyond memory safety, for instance, the guaranteed absence of assertion failures or more-general functional correctness, requires static program verification. For traditional system programming languages, formal verification is notoriously difficult and requires complex specifications and logics to reason about pointers, aliasing, and side effects on mutable state. This complexity is a major obstacle to the more-widespread verification of system software.  In this paper, we present a novel verification technique that leverages Rust's type system to greatly simplify the specification and verification of system software written in Rust. We analyse information from the Rust compiler and synthesise a corresponding core proof for the program in a flavour of separation logic tailored to automation. To verify correctness properties beyond memory safety, users can annotate Rust programs with specifications at the abstraction level of Rust expressions; our technique weaves them into the core proof to verify modularly whether these specifications hold. Crucially, our proofs are constructed and checked automatically without exposing the underlying formal logic, allowing users to work exclusively at the level of abstraction of the programming language. As such, our work enables a new kind of verification tool, with the potential to impact a wide audience and allow the Rust community to benefit from state-of-the-art verification techniques. We have implemented our techniques for a subset of Rust; our evaluation on several thousand functions from widely-used Rust crates demonstrates its effectiveness.},
-journal = {Proc. ACM Program. Lang.},
-month = oct,
-articleno = {147},
-numpages = {30},
-keywords = {type systems, heap-manipulating programs, concurrency, Rust}
+  author = {Astrauskas, Vytautas and M\"{u}ller, Peter and Poli, Federico and Summers, Alexander J.},
+  title = {Leveraging rust types for modular specification and verification},
+  year = {2019},
+  issue_date = {October 2019},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  volume = {3},
+  number = {OOPSLA},
+  url = {https://doi.org/10.1145/3360573},
+  doi = {10.1145/3360573},
+  abstract = {Rust's type system ensures memory safety: well-typed Rust programs are guaranteed to not exhibit problems such as dangling pointers, data races, and unexpected side effects through aliased references. Ensuring correctness properties beyond memory safety, for instance, the guaranteed absence of assertion failures or more-general functional correctness, requires static program verification. For traditional system programming languages, formal verification is notoriously difficult and requires complex specifications and logics to reason about pointers, aliasing, and side effects on mutable state. This complexity is a major obstacle to the more-widespread verification of system software.  In this paper, we present a novel verification technique that leverages Rust's type system to greatly simplify the specification and verification of system software written in Rust. We analyse information from the Rust compiler and synthesise a corresponding core proof for the program in a flavour of separation logic tailored to automation. To verify correctness properties beyond memory safety, users can annotate Rust programs with specifications at the abstraction level of Rust expressions; our technique weaves them into the core proof to verify modularly whether these specifications hold. Crucially, our proofs are constructed and checked automatically without exposing the underlying formal logic, allowing users to work exclusively at the level of abstraction of the programming language. As such, our work enables a new kind of verification tool, with the potential to impact a wide audience and allow the Rust community to benefit from state-of-the-art verification techniques. We have implemented our techniques for a subset of Rust; our evaluation on several thousand functions from widely-used Rust crates demonstrates its effectiveness.},
+  journal = {Proc. ACM Program. Lang.},
+  month = oct,
+  articleno = {147},
+  numpages = {30},
+  keywords = {type systems, heap-manipulating programs, concurrency, Rust}
 }
 
 @phdthesis{방인영2024study,
@@ -53,16 +53,16 @@ keywords = {type systems, heap-manipulating programs, concurrency, Rust}
 
 // paper to doctorate thesis above
 @inproceedings {287352,
-author = {Inyoung Bang and Martin Kayondo and HyunGon Moon and Yunheung Paek},
-title = {{TRust}: A Compilation Framework for In-process Isolation to Protect Safe Rust against Untrusted Code},
-booktitle = {32nd USENIX Security Symposium (USENIX Security 23)},
-year = {2023},
-isbn = {978-1-939133-37-3},
-address = {Anaheim, CA},
-pages = {6947--6964},
-url = {https://www.usenix.org/conference/usenixsecurity23/presentation/bang},
-publisher = {USENIX Association},
-month = aug
+  author = {Inyoung Bang and Martin Kayondo and HyunGon Moon and Yunheung Paek},
+  title = {{TRust}: A Compilation Framework for In-process Isolation to Protect Safe Rust against Untrusted Code},
+  booktitle = {32nd USENIX Security Symposium (USENIX Security 23)},
+  year = {2023},
+  isbn = {978-1-939133-37-3},
+  address = {Anaheim, CA},
+  pages = {6947--6964},
+  url = {https://www.usenix.org/conference/usenixsecurity23/presentation/bang},
+  publisher = {USENIX Association},
+  month = aug
 }
 
 @online{cwe-top25-2025,
@@ -177,6 +177,14 @@ url="https://doi.org/10.1007/978-3-031-19604-1_4"
   pages={4--21},
   year={1984},
   publisher={IEEE}
+}
+
+@inproceedings{esbensen2006cost,
+  title={The cost of iterator validity},
+  author={Esbensen, Nicolai},
+  booktitle={Proceedings of the 6th STL Workshop},
+  pages={34},
+  year={2006}
 }
 
 https://www.kernel.org/doc/Documentation/memory-barriers.txt
@@ -445,7 +453,6 @@ https://docs.kernel.org/rust/index.html
   publisher={ACM New York, NY, USA}
 }
 
-
 --- FATFS ---
 
 @online{uefi_spec_2_11_2024,
@@ -478,6 +485,33 @@ https://docs.kernel.org/rust/index.html
   title   = {Capacity (SD/SDHC/SDXC/SDUC)},
   url     = {https://www.sdcard.org/developers/sd-standard-overview/capacity-sd-sdhc-sdxc-sduc/},
   urldate = {2026-03-03},
+}
+
+--- Rust in Linux ---
+
+@online{lkml_rust_support,
+  author  = {{Miguel Ojeda <ojeda@kernel.org>}},
+  title   = {{LKML: ojeda@kernel ...: [PATCH 00/13] [RFC] Rust support}},
+  date    = {2021-04-14},
+  url     = {https://www.ecma-international.org/wp-content/uploads/ECMA-107_2nd_edition_june_1995.pdf},
+  urldate = {2026-03-19},
+}
+
+@online{lwn_rust_remove_experimental_status,
+  author       = {Jonathan Corbet},
+  title        = {The (successful) end of the kernel Rust experiment},
+  organization = {LWN.net},
+  date         = {2025-12-10},
+  url          = {https://lwn.net/Articles/1049831/},
+  urldate      = {2026-03-19}
+}
+
+@inproceedings{li2024empirical,
+  title={An empirical study of {Rust-for-Linux}: The success, dissatisfaction, and compromise},
+  author={Li, Hongyu and Guo, Liwei and Yang, Yexuan and Wang, Shangguang and Xu, Mengwei},
+  booktitle={2024 USENIX Annual Technical Conference (USENIX ATC 24)},
+  pages={425--443},
+  year={2024}
 }
 
 --- Outlook ---

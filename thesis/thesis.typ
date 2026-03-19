@@ -1,9 +1,4 @@
 // # Missing chapters
-// - Background/Rust/Typesystem
-// - Background/Rust/Lifetimes
-// - Bento
-// - Rust for Linux
-// - Implementation (top-level)
 // - TypedBuilder (a bit of a rework) + some of the data types
 // - Eval/CVEs
 //
@@ -14,12 +9,13 @@
 // @löhr: deutsch passiviert / englisch "we"
 // - https://academics.umw.edu/swc/files/2024/02/IEEE-Formatting-Guidelines.pdf
 //   - capitalize headers
-// - [ ] glossary ausformulieren
 //
 // # FINAL REFACTOR
 // - grep for glossary/abbrev instances
 //   - "therefor"
 //   - "atleast"
+// - and contractions
+//   - `'t`, `'ve`, `'re`, `that's`
 // - schauen ob citation punctuation eingehalten wird.
 // - template
 //   - [ ] english translation
@@ -53,9 +49,6 @@
 }
 
 = Introduction
-
-- Rust is increasing usage in system level
-- but still many big projects (linux etc.) are written in C
 
 Since the beginning of computer programming, there has been a discrepancy between the input states an interface formally accepts, and the input states that are sound to handle.
 For example, a reciprocal function $$ f(x) = 1/x $$ might formally accept a 32 bit integer --- and therefore all of its $$2 ^ 32$$ input states ---, but the mathematical formula it tries to model will not give a sensible result for $$ x = 0 $$; least of all if the function in turn returns an integer, since there is no integer $$ n: 1 / x = n $$.
@@ -94,17 +87,22 @@ One straightforward solution has always been to limit the function domain via do
 
 // TODO maybe use contract programming thought model, and explain keywords (invariants, preconditions)
 
-In programming languages where we have strict and strong typing /* FIXME define */, we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for values of these types, and if any invariants are not upheld, we can detect this unsoundness and trigger an error. This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32` that represents the idea of an integer that cannot be zero. Unfortunately, not all languages provide the features necessary to formulate such powerful types. One prominent example is C, which is predominantly used in systems level programming, both in general and in the domain we are looking at in this work.
+In programming languages where we have strong typing (see @ch_background.rust.type_system), we can enforce invariants about types we create, since we have to explicitly provide the methods of construction for values of these types, and if any invariants are not upheld, we can detect this unsoundness and trigger an error.
+This allows us to express function signatures of the kind discussed previously, by creating a new type `NonZeroI32` that represents the idea of an integer that cannot be zero.
+Unfortunately, not all languages provide the features necessary to formulate such powerful types.
+One prominent example is C, which is predominantly used in systems level programming, both in general and in the domain we are looking at in this work.
 Besides the basic datatypes that exist primarily to differentiate between CPU directives --- integers, floating points, characters, pointers --- users can create composites of these types via the `struct` or `union` constructs, and define functions to work on these datatypes only.
 But these type requirements can easily be subverted, because in C, casting between different types is often implicit, and there are no mechanism to enforce invariants of a type --- all user code that can "see" a struct can create or delete instances as it sees fit.
 
-That's why, in this work, we will look at Rust: a modern language that is gaining rapid traction in the area of systems programming, and has a strong, expressible type system as one of its flagship features .
+That is why, in this work, we will look at Rust: a modern language that is gaining rapid traction in the area of systems programming, and has a strong, expressible type system as one of its flagship features.
 This enables us to explore the latter approach.
 @nonzeroi32_reciprocal shows such an implementation in Rust.
 It utilizes the concept of a "newtype struct": a `struct` with one anonymous member, which is used to wrap this inner element and to effectively give new type semantics to it.
 If the inner value is chosen to be private, ergo not visible or accessible from code from a different module, this prevents any alternative way of constructing or modifying values of this new type other than what the module creator chooses to provide.
-This achieves exactly the desired effect. /* TODO evtl kürzen das knaggiger */
-By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```. This `new()` function can be total, since it returns a result value representing a fallible computation. In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
+This achieves exactly the desired effect./* TODO evtl kürzen das knaggiger */
+By making the inner value private, we then ensure that users of our library are forced to use the only construction method we provide them with, ```rust NonZeroI32::new(i32)```.
+This `new()` function can be total, since it returns a result value representing a fallible computation.
+In that sense, the function signature of `new()` expresses that *every 32-bit integer is either a valid non-zero 32-bit integer or an error*.
 
 #figure(
   ```rust
@@ -130,11 +128,12 @@ By making the inner value private, we then ensure that users of our library are 
 This is one of several features of Rust that promise improving soundness checking and language expressibility with no or minimal runtime impact.
 System programming is an area where these soundness guarantees are especially important.
 While a logic error stemming from an unchecked invariant in an application can crash this application or corrupt its data, a kernel or @OS bug can cause those failure states in any and every subsystem and program.
-Faulty @OS behaviour can cause instability on every layer of the system, and endanger the work of all users. /* FIXME quote? */
+Faulty @OS behaviour can cause instability on every layer of the system, and endanger the work of all users.
 Simultaneously, system programming has to produce performant instructions, since they will be running as the backbone of the @OS, which often leads to complex data structures where keeping invariants as cognitive load, for programmers to check upon every code change, is unlikely to produce said stability in the long run.
 That is also why solutions that penalize compile time only are especially valuable, because compile time is often expendable --- after all, most @OS:pl run many times as often as they compile.
 
 Our work is therefore targeting a subsystem of modern @OS development. Filesystems were chosen, because they fulfil all stated criteria: their performance matters, their correctness is crucial for stable system usage, and they deal with complicated, highly optimized data structures where invariants between those structures play a major role.
+Additionally, #cite(<li2024empirical>, form: "prose") found that filesystem-related kernel modules represent a valuable target for improvements through Rust because of their high ratio of bugs per lines of code.
 Kernel module development is not a trivial task, though, and challenges during code writing and testing would cost additional time.
 Debugging is also comparably harder when the targeted module is injected into the @OS itself.
 FUSE (#strong[F]ilesystem in #strong[USE]rspace) offers a way out for this conundrum @linuxkernel_fuse_docs.
@@ -176,7 +175,9 @@ It is intended for use as a low level systems language, usually competing with C
 compared to C, it incorporates numerous improvements aimed at increasing safety and automatic correctness of written software, with minimal to no runtime impact
 @Thompson2023RustFastestGrowing.
 
-=== Type system
+=== Unsafe Rust
+
+=== Type system <ch_background.rust.type_system>
 
 @MILNER1978348 @WRIGHT199438
 
@@ -192,7 +193,7 @@ Static type systems, as previously defined in #cite(<10.1145_942572.807045>, for
 In dynamic type systems, the concrete types of values are indeterminate during compile-time and the compiler will emit the necessary runtime checks that result in execution errors when a type mismatch happens.
 
 We value the strength of a type system highly, because it provides us with the foundational guarantees on which the higher-level contracts can be expressed.
-For example, given we want to enforce that a file handle be in a specific, well defined state (open, writable) before writing to it, with a weak type system, we would have two possible scenarios for inconsistency: the file handle implicitly converting into another type, which potentially doesn't check those contractual assertions, and a value of another type implicitly converting into a file handle, where the conversion itself possibly circumvents some checks.
+For example, given we want to enforce that a file handle be in a specific, well defined state (open, writable) before writing to it, with a weak type system, we would have two possible scenarios for inconsistency: the file handle implicitly converting into another type, which potentially does not check those contractual assertions, and a value of another type implicitly converting into a file handle, where the conversion itself possibly circumvents some checks.
 Additionally, strong type systems can prevent bugs of a certain class, where the wrong value is passed into a function, if that value has a different type.
 The weaker the type system, the more implicit conversions may accidentally trigger, which would make the program compile without catching the type error.
 This is not to say that all implicit conversions are inherently bad, but they pose certain risks and are usually hindering when trying to reason about program code, since every possible place where an implicit conversion could take place exponentially adds possible states that must be considered.
@@ -221,6 +222,7 @@ This gives us the flexibility to fall back to dynamic typing whenever necessary,
 === Borrow checker, lifetimes and ownership
 
 One of the core improvements made by Rust in the area of static correctness is its memory model, centered around ownership, static reference tracking and reference lifetime @10.1145_3360573.
+
 In Rust, values are, by default, moved instead of copied.
 In fact, making a type copy-able involves implementing a special trait (```rust Clone```), while moving values is core to the type system and automatically available for every type.
 In contrast, types are memory-copied by default in C++, and must manually influence or prohibit that behavior @cppreference.
@@ -232,10 +234,16 @@ In languages where values are copied by default or can be copied without limitat
 This problem can be managed by manually implementing checks on the handle type, usually with the help of shared memory and synchronization.
 Alternatively, if the language provides ways to limit arbitrary copying, these limits can be carefully implemented.
 But the default still leaves room for errors and makes the copy case more ergonomic by definition.
-In Rust, these questions don't arise, since the file handle type would simply not implement the ```rust Clone``` trait and every function with a value parameter of ```rust FileHandle``` would automatically consume this parameter, rendering it unusable in the caller site.
+In Rust, these questions do not arise, since the file handle type would simply not implement the ```rust Clone``` trait and every function with a value parameter of ```rust FileHandle``` would automatically consume this parameter, rendering it unusable in the caller site.
 
+Besides ownership, Rust provides references as a handle to a non-owned value that can be used to access it #cite(<rust-reference-1.92>, supplement: "ch. 10.1.13").
+There are two types of references: mutable-exclusive and immutable-shared.
+This hints at a core principle in Rust's memory model, namely that shared mutable state is prohibited --- without further safeguards and encapsulation.
+This eliminates error classes like data races (see @ch_background.rust.concurrency) and iterator invalidation @esbensen2006cost, and makes the code easier to reason about by not letting references spread out over modules influence local state.
+To guarantee that references do not exist longer than the data they are referring to, Rust uses lifetimes, which are part of the type of a value but can often be inferred by the compiler without writing extra syntax.
+The borrow checker --- a part of the static analysis tools inside the compiler --- then validates through these lifetimes that references are only "alive" when their pointee is "alive", and that the invariants regarding mutable and shared references are held up.
 
-=== No data races and fearless concurrency
+=== No data races and fearless concurrency <ch_background.rust.concurrency>
 
 Concurreny is an important aspects of today's software.
 Single machines usually have several physical processor cores, and programs wanting to take advantage of the hardware capabilities need to deal with some variant of concurrency.
@@ -300,9 +308,9 @@ We assume that these cannot be prevented in sufficiently powerful languages, as 
 One of the strong points of Rusts stance on a strong and flexible type system comes with its choice in error handling.
 One common pitfall with C, that is the cause of many production bugs, is that C uses patterns to signal errors that are implicit,
 usually reserving part of the range of the function for error codes, and sometimes storing additional info on the error in a global variable --- commonly `errno`.
-This handling is implicit because, since the return type doesn't inherently encode the possibility of an error, manual checks by the programmer must be inserted for every potential source of errors, which increases cognitive load.
+This handling is implicit because, since the return type does not inherently encode the possibility of an error, manual checks by the programmer must be inserted for every potential source of errors, which increases cognitive load.
 Forgetting to insert such a check almost always leads to unsoundness, since a potential error will be handled as some sort of valid success value.
-Circumstances are even more difficult when dealing with `void` functions, that don't return a value but rely on side effects instead.
+Circumstances are even more difficult when dealing with `void` functions, that do not return a value but rely on side effects instead.
 Since no return value handling is required for "normal", non-error code paths, the chance of forgetting to check for errors is increased again.
 Although some C compilers define custom extension attributes that can annotate a function to emit a warning when the function's result is unused#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html], no standardized solution exists.
 @tian2017automatically
@@ -339,7 +347,7 @@ Coupled with Rust's ```rust #[must_use]``` function annotation, which is set on 
 
 == FUSE <ch_background.fuse>
 // - filesystem as process in userspace
-// - don't have to build kernel modules (safer, easier dev workflow)
+// - do not have to build kernel modules (safer, easier dev workflow)
 // - should be comparable though (why? give reasons)
 // - architecture (/* TODO image */)
 //   - fuse kernel module
@@ -388,6 +396,8 @@ This creates the illusion that implementing a filesystem is nothing more than pr
 
 = Related work <ch_related>
 
+The following chapters enumerate similar projects, as well as their similarities and differences in research goal, design and evaluation.
+
 == Bento
 
 // - paper refs:
@@ -403,10 +413,12 @@ This creates the illusion that implementing a filesystem is nothing more than pr
 // @miller2021high
 
 #cite(<miller2021high>, form: "prose") propose a problem space similar to our work: filesystem development is tedious, because kernel modules are hard to debug; a filesystem kernel module crashing the system through bugs is also suboptimal.
-Having said that, in their evaluation FUSE falls short because of significant overhead introduced into metadata-heavy workloads --- such as `git clone`#footnote[https://git-scm.com/docs/git-clone] of big repositories --- which incentivized them to develop a novel solution.
+Still, in their evaluation FUSE falls short because of significant overhead introduced into metadata-heavy workloads --- such as `git clone`#footnote[https://git-scm.com/docs/git-clone] of big repositories --- which incentivized them to develop a novel solution.
 Bento is a framework for developing Linux filesystems that plugs into the @VFS kernel component and provides a sandbox for filesystem implementations written in Rust.
 Modules using this framework can be loaded, reloaded and updated without interrupting userspace work, and have their crashes isolated from the rest of the kernel, increasing resilience to filesystem bugs.
-// FIXME not finished right?
+
+While this approach would bring benefits also to our project, it is our estimate that it would have increasse development effort manyfold without significantly increasing the value and validity of our results, which is why we decided against it.F
+Furthermore, their evaluation consists only of benchmarking their implementation against the C-native `ext4` module, with no security criteria considered, whereas our work focusses on evaluating security benefits with no significant consideration of performance criteria.
 
 == `rust-fatfs`
 
@@ -423,7 +435,7 @@ For this reason, it is relied upon by digital cameras for their dedicated storag
 The `fuser` crate, maintained by GitHub user `cberner`, is currently the most used FUSE bindings crate on `crates.rs`, counting over 150k downloads per month, and over 1k stars on GitHub @fuser_docs.
 It is not an academic project, but a practical solution for integrating FUSE into the Rust ecosystem, thereby leveraging the advantages of Rusts architecture for filesystem development.
 While our goals are not conceptually different as a whole, there is no explicit focus on security.
-Types are modeled very closely to the underlying C architecture, although users aren't forced to create C ABI compatible functions, since that --- like in our solution --- is abstracted away.
+Types are modeled very closely to the underlying C architecture, although users are not forced to create C ABI compatible functions, since that --- like in our solution --- is abstracted away.
 In fact, probably due to increased performance, `fuser` does not use @libfuse but talks directly to the FUSE module via socket.
 This is a complex, low-level undertaking and was out of scope for our project, although it would have been interesting in principle, as the same design principles could still be applied.
 Still, results are comparable because the crate models `fuse_operations` very closely to @libfuse.
@@ -440,6 +452,16 @@ This was carefully considered, but the high-level API simplifies some implementa
 //   - fuse LowLevel statt "normal" API (mine)
 //   - *aber*: verwendet eh niemand // TODO die paar papers finden die das gesagt haben
 // - rust in linux kernel
+
+Rust for Linux#footnote[https://rust-for-linux.com/] represents a major effort to allow a second high-level language into the linux kernel, next to C @lkml_rust_support.
+The language's promise of memory-safe low-level code with many additional features --- such as a strict type system, sum types and ownership model --- that are beneficial to correct and performant software, is also cited as motivation.
+Since December '25, the Rust subsystem has been promoted to "core" from "experimental" regarding the Linux kerner --- it is now a first-class citizen @lwn_rust_remove_experimental_status.
+Currently, the subsystems developed with or in Rust include several filesystems such as `tarfs`, `PuzzleFS` and a read-only `ext2` implementation#footnote[https://www.phoronix.com/news/Rust-VFS-Linux-V2-Now-With-EXT2] @li2024empirical.
+
+#cite(<li2024empirical>, form: "prose") evaluate the Rust-for-Linux project w.r.t three categories: security enhancements, performance impact, and improvements in the development process such as code readability and project attractiveness for junior developers.
+They conclude that while Rust does seem to partially improve the areas it promises to, high-level logic errors are still very much possible, and certain pitfalls can lead to vast degradation of performance.
+They also conclude that, based on their metrics of bugs per lines of code, filesystems and filesystem-adjacent modules like the `ext4` driver and the Linux block device subsystem would be lucrative next targets.
+This aligns with our assessment.
 
 = Concept <ch_concept>
 
@@ -496,7 +518,20 @@ We include reasoning for every categorization, and if deemed non-preventable, we
 // tables with pro/cons, interactions of components
 
 // FIXME @important: image rendering
-//#align(center, [#image("images/architecture.png", width: 120%)])
+#figure(
+  [#align(center, [#image("images/architecture.png", width: 80%)])],
+  caption: "High level architecture overview of our wrapper library.",
+) <architecture.png>
+
+@architecture.png shows the architecture we chose for our project.
+Wrapping around generated bindings to the underlying C code of @libfuse, it exposes a number of Rust equivalents for relevant data types.
+These higher-level models include correctness checks on all properties where that is feasible, therefore significantly decreasing the surface for errors on the filesystem implementor's side, which is the main goal of our thesis.
+As central interface, a ```rust Filesystem``` trait is provided, which closely models the underlying ```c fuse_operations``` as a collection of relevant callbacks which a filesystem must provide, and which in turn constitute the main functionality of that filesystem.
+The ```rust Filesystem``` trait achieves these advantages by utilizing the constructed higher-level type mappings.
+
+The following sections present a detailed elaboration of the concrete structure of our implementation, as well as the conditions and limitations exacted by our chosen frameworks.
+We first establish the areas of Rust that are of central relevance to our design, and the challenges they impose.
+This is followed by justified descriptions of the data structures we modeled and the design pattern we chose, as well as justifications on why we chose them.
 
 == Basic C interop
 // source: rust unsafe invariants
@@ -519,12 +554,12 @@ Regarding use of raw pointers in unsafe Rust, the following invariants exist:
 
 1. No dereferencing of @dangling or #gls("alignment", display: "unaligned") pointers.
   This is obvious, since these requirements stem from the underlying hardware, and C also declares them invalid @c_standard#cite(<rust-reference-1.92>, supplement: "ch. 17.2").
-2. Respect aliasing rules: no pointer is allowed to point to memory that's also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
+2. Respect aliasing rules: no pointer is allowed to point to memory that is also pointed-to by a mutable reference, since a mutable reference in Rust is guaranteed to be exclusive.
   This is needed to provide same of Rusts safety guarantees: data races, use-after-free errors and iterator invalidation are all inherently impossible without shared mutable state.
-3. Respect immutability: no pointer is allowed to modify data that's also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
+3. Respect immutability: no pointer is allowed to modify data that is also pointed-to by a shared reference, since a value behind a shared reference is guaranteed not to change.
   This also follows naturally from the basic type system axioms in Rust:
   if a reference pointing to a value is held, then by rule 2 it is guaranteed that no mutable reference to this value exist simultaneously.
-  Therefore the value mustn't change.
+  Therefore the value must not change.
 4. Values in memory must be valid for their respective types: pointers must not be used to change the representation in memory of to a value --- or reference --- to a state which is not valid for the type this value --- or reference --- has.
   E.g. a `NonZeroU8`, represented in memory as a `u8`, will have one bit pattern that would correspond to a numeric zero and is therefore illegal.
   This rule is also emergent, following from the basic type system principle that variables of a type must hold values of exactly that type.
@@ -537,12 +572,12 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
   - *Unaligned pointer*: this is easy, as Rust provides ```rust ptr::is_aligned()```, which takes a pointer and detects misalignment.
   - *Dangling null-pointer*: this is also easy, both manually and through the Rust-provided ```rust ptr::is_null()```, which takes a pointer and detects null-ness.
   - *Dangling non-null pointer*: this happens when a pointer is used-after-free or if pointer arithmetic goes wrong, and is much harder to avoid.
-    Since we don't control memory allocation in C, we largely have to trust C code to not pass us pointers from this category.
+    Since we do not control memory allocation in C, we largely have to trust C code to not pass us pointers from this category.
     This would cause UB and should therefore be documented visibly as soundness assumption.
 2. For pointers passed to us by @libfuse, the solution is simply to not create a reference to it.
   If it is necessary to pass a mutable reference into user code, an intermediate owned value must be created, and the target value must be copied in and out of that intermediate.
 3. When dealing with non-const pointers, care must be taken to not create a shared reference to it.
-  Const pointers don't matter for that aspect, since it is impossible to modify values through them, given they are not cast to non-const pointers.
+  Const pointers do not matter in that aspect, since it is impossible to modify values through them, given they are not cast to non-const pointers.
 4. This only matters when primitive C-style casts or ```rust mem::transmute()``` /* todo explain? define? quote? */ are used, as otherwise the Rust typesystem protects us from writing values of the wrong type, even inside unsafe blocks.
   Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
 
@@ -564,7 +599,7 @@ Correctly detecting and handling string encodings is a hard problem  /* MAYBE ci
 
 When a Rust program is compiled with stack unwinding support and a @panic is triggered, the default unwind handler will walk up the stack in order to react to the panic, collecting debug information or cleaning up data #cite(<rust-reference-1.92>, supplement: "ch. 14").
 In a program using FFI, this can lead to crossing into another language runtime while walking the stack.
-Doing so correctly is a non-trivial task and can easily lead to @UB.
+Doing so correctly is a non-trivial task and "creates unique opportunities for undefined behavior, especially when multiple language runtimes are involved."
 On the other hand, turning unwinding off causes helpful stack traces and debug information to be lost when a @panic occurs.
 We therefore decided to keep unwinding behaviour while preventing any panic from propagating across an FFI boundary.
 
@@ -572,7 +607,7 @@ Every function that is visible to C can potentially be called from an environmen
 Therefore each of those functions must be @panic-free.
 As of now, there is no compiler flag or lint that detects or prevents use of panicking functions, operators or language keywords.
 As a result, this requirement must be checked manually by reviewing the source code of the functions in question, and, recursively, the functions they call.
-A convention exists to note possible panics in a section of the function documentation, but even the standard library doesn't consistenly follow it.
+A convention exists to note possible panics in a section of the function documentation, but even the standard library does not consistenly follow it.
 // MAYBE enumerate sources for panics
 
 While preventing panics in self-maintained code requires careful manual analysis, this is not possible for user-provided functions.
@@ -640,7 +675,7 @@ This function, as do all of the callbacks described here, takes a path in form o
 
 We chose to mostly ignore the `fuse_file_info` for now, as it is only used under specific circumstances, and even then provides only very specialized attributes that would go beyond the scope of this exploration. The other two parameters are checked as per concept.
 
-It's the users job to create an instance of `struct Stat` and pass it back to us. This @newtype_struct contains a valid `stat` fuse struct inside, which is needed as return value written into the output pointer argument of same name, and can trivially convert to one.
+It is the users job to create an instance of `struct Stat` and pass it back to us. This @newtype_struct contains a valid `stat` fuse struct inside, which is needed as return value written into the output pointer argument of same name, and can trivially convert to one.
 
 === readdir
 
@@ -648,7 +683,7 @@ This function's job is, given a directory as path, provide a list of child entri
 
 There exists an alternative, more complex mode, which we could have chosen to support: Implement the additional `opendir` operation to open the directory to enumerate as a file descriptor. Then, `readdir` is called on the active file descriptor, providing a view of the directory that is guaranteed to be the same as when `opendir` was called. This was deemed unneccessary to explore the given research questions, and skipped subsequently.
 
-The API is designed, so that the `readdir` implementation doesn't just return, or write into, an array of entries.
+The API is designed, so that the `readdir` implementation does not just return, or write into, an array of entries.
 Instead, a function pointer to a "filler" function is provided.
 Our operation has to call this function for every entry.
 Some of the filler functions parameters correspond to entry metadata, others, like a pointer to an opaque data buffer, have to be forwarded @readdir_filler_fn#cite(<libfuse_docs>, supplement: "p. structfuse__operations.html").
@@ -730,7 +765,10 @@ A way to implement option 1 is provided in the form of a ```c void *private_data
 
 Since it is possible to store a Rust pointer inside a C void pointer, @libfuse_wrapper can submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method.
 This has the following disadvantages:
-- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the /* TODO kampf/anstrengung/undertaking */ undertaking of creating safe systems-level code. Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory. In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system /* TODO quote? */, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefore to @UB. This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
+- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the undertaking of creating safe systems-level code.
+Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory.
+In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefore to @UB.
+This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
 
 // FIXME no second disadvantage?
 
@@ -774,10 +812,10 @@ There are multiple ways to construct a value in Rust:
 
 - *Initializing a raw struct*: If the struct has only public fields, directly constructing it is possible.
   As downsides, validation of the value as a whole is not possible, since a struct can always be legally constructed from legal values of all its elements, so any checks must be performed through the types of its members.
-  Also, staggered initialization is not possible, since at construction point, every value has to be provided. It is possible to let construction use default values for some members, but this doesn't equal partial initialization, since it is not fundamentally possible to tell an uninitialized value from a valid value equalling the default value of the field.
+  Also, staggered initialization is not possible, since at construction point, every value has to be provided. It is possible to let construction use default values for some members, but this does not equal partial initialization, since it is not fundamentally possible to tell an uninitialized value from a valid value equalling the default value of the field.
   Thus, this loses some type safety.
-- *Constructor function*: Rust doesn't have constructors as language constructs, as opposed to e.g. C++.
-  Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust also doesn't allow function overloading.
+- *Constructor function*: Rust does not have constructors as language constructs, as opposed to e.g. C++.
+  Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust also does not allow function overloading.
   Paired with lack of default parameter values, this makes writing constructors rather rigid, and is not substantially different to using raw structs.
   No staggered initialization is possible, as with a struct initialization, but interdependent validity checks can be performed;
   with the caveat, that when a type provides multiple constructors, all of them must duplicate the verification logic or use a private shared constructor that centralizes the checks.
@@ -786,7 +824,7 @@ There are multiple ways to construct a value in Rust:
   An elegant combination of the two concepts above is to use a dedicated initialization struct, that is either passed to a constructor or can be cast to the target type.
   It acts as a sort of dictionary, or list of named parameters.
   This emulates named arguments and also works with private fields, since the target type construction is hidden from the user.I
-  It still doesn't solve staggered construction, for the same reasons as stated above.
+  It still does not solve staggered construction, for the same reasons as stated above.
   But one could maybe imagine using this pattern multiple times, where each initialization struct sets some parameters and generates the next stage of initialization via an opaque intermediate type, thus providing multiple phases of initialization.
   Implementing this from hand would be complex and error-prone, since every combination of initialized-ness has to be coded explicitly, which leads to $$ n! $$ cases, where $$n$$ equals the number of initialization parameters.
 - *Typestate builder pattern*: This is where Rusts strengths come in to play.
@@ -826,7 +864,7 @@ There are multiple ways to construct a value in Rust:
   }
 
   ```,
-  caption: [FIXME.],
+  caption: [The typed builder pattern, demonstrated on a point in the cartesian coordinate system. Non-generic implementation.],
 ) <typestate_builder_manual_1>
 
 In this case, the type system makes it invalid to set an x or y coordinate multiple times, or forget to set it.
@@ -869,7 +907,7 @@ Another way of modeling this pattern uses generics. @typestate_builder_manual_2 
   }
 
   ```,
-  caption: [FIXME.],
+  caption: [The typed builder pattern, generic implementation.],
 ) <typestate_builder_manual_2>
 
 // TODO more theoretical bla on state machines / DEAs
@@ -881,11 +919,11 @@ The implementation using generics has a few advantages:
 Since all intermediate types are specializations of a general builder type, there can be methods on the general builder type, which correspond to transitions on any starting state. /* FIXME macht das hier sinn? überhaupt nochmal typestate<->builder überdenken */
 
 While a typestate builder has many advantages in statical correctness, conditional branches can be difficult to handle.
-That is because every state of the builder is effectively a different type, and Rust doesn't allow items to have different types depending on a branch.
+That is because every state of the builder is effectively a different type, and Rust does not allow items to have different types depending on a branch.
 This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value/* FIXME example */.
-Runtime builders don't have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
+Runtime builders do not have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
 
-Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known, and flexibility with runtime checks, when it's not.
+Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known, and flexibility with runtime checks, when it is not.
 
 
 @typed_builder_docs
@@ -914,10 +952,10 @@ Because of the tradeoffs discussed between the different solutions, it can be ad
 === `stat` <ch_stat>
 
 The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
-This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- it's permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory, or opening a file.
+This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- it is permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory, or opening a file.
 @stat.3type_manpage
 
-Our attempt at modeling lead us to break down the struct into smaller parts, which require more attention: /* FIXME @ask stefan: noch notwendig? kurzes statement, warum die gut geeignet sind. bissi expliziter halt. zb: es gibt bestimmte komponenten, da macht es sinn die extra zu behandeln, weil gut zu prüfen bla etc…. eigl in extra absatz */
+Our attempt at modeling lead us to break down the struct into smaller parts, which require more attention:
 - `FileType`, which is an enum flag of several possible values that have to specifically match magic IDs from the corresponding C header.
 - `FilePermissions`, which are stored as a positive integer and usually displayed as an octal number in the range of `0o000` to `0o777` and represent restrictions on reading, writing and executing the underlying entry.
 - three bitflags (`setuid`, `setgid`, and `vtx_flag`), that are context-dependent and enable additional features. These are stored inside the permissions integer in the underlying Unix APIs.
@@ -927,7 +965,7 @@ Other fields, like file size and modification time, were not deemed as interesti
 === `fuse_file_info`
 
 This type, although a parameter to every operation implemented, is optional in every case, and seldomly used.
-In fact, due to the limited nature of our experiment, because we don't work with `open` and file descriptors, it can be assumed that the struct never be initialized.
+In fact, due to the limited nature of our experiment, because we do not work with `open` and file descriptors, it can be assumed that the struct never be initialized.
 Therefore, modeling was skipped.
 This does not mean that `fuse_file_info` is not a good candidate for our methodology.
 To the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which atleast provide a simple safeguard against erroneous bit operations.
@@ -1058,16 +1096,6 @@ The dynamic aspect was chosen deliberately, because it leaves less room for the 
 The following example (@hello2_file_table) shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.
 This dynamic property of our test filesystem allows us increase confidence in our abstractions, by providing less stability on which to accidentally depend.
 
-Additional logic was deemed necessary to be able to build a hierarchical recursive directory data structure from the provided file table, which is needed for listing directory contents. Implementing this keeps the file table itself clean and readable, and accelerates development and testing.
-
-Besides some boilerplate to iterate over files in a director, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
-The implementation was straight-forward and simple, which which was one of our design goals for @libfuse_wrapper.
-Most low-level details and pitfalls were abstracted away.
-One aspect that required a disproportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
-This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
-
-// FIXME @ask more? - why not
-
 #figure(
   ```rust
   static FILES: LazyLock<[FileEntry; 6]> = LazyLock::new(|| {
@@ -1082,13 +1110,25 @@ This could be made possible as an additional opt-in API, but would almost certai
   caption: [A global file table for our `hello2` example filesystem],
 ) <hello2_file_table>
 
+Additional logic was deemed necessary to be able to build a hierarchical recursive directory data structure from the provided file table, which is needed for listing directory contents. Implementing this keeps the file table itself clean and readable, and accelerates development and testing.
+
+Besides some boilerplate to iterate over files in a director, the only logic consists of the block ```rust impl Filesystem for Hello2```, where we implement methods on @libfuse_wrapper's filesystem trait.
+The implementation was straight-forward and simple, which which was one of our design goals for @libfuse_wrapper.
+Most low-level details and pitfalls were abstracted away.
+One aspect that required a disproportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
+This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
+
+// FIXME _ask more?
+// - beispiel für "most lowlevel details…"
+// -
+
 = Conclusion <ch_conclusion>
 
 In this thesis, we explored the benefits of a strong type system regarding safety in operating system programming, by the examples of Rust and filesystems.
 This combination is of particular relevance, given the recent Linux kernel developments in that same direction @rustforlinux-website @linuxkernel-rust-docs, and the multitude of publications regarding safe system development in Rust @10.1145_3102980.3103006 @10592287 @jung2020safe @10.1145_3360573 @287352 @bugden2022rustprogramminglanguagesafety @Oikawa2023.
 Strong type systems allow modeling contracts around APIs and data structures inside the code, which makes them automatically verifiable by static analysis.
 This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
-We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that isn't possible.
+We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that is not possible.
 We collected design principles for safe system programming and methodically applied them to the chosen subset of filesystem operations necessary, while having a rich toolset  for a minimal filesystem implementation.
 We then evaluated a sample of @CVE:pl from the linux kernel filesystem subsystems over the past five years, assessing if --- and to what degree --- these vulnerabilities would have been prevented with the method we described.
 A minimal filesystem in Rust was created, both to test the practical viability and improve the development phase of our wrapper library, and to give a qualitative assessment of safety and ergonomy aspects of the API.
@@ -1177,6 +1217,15 @@ Therefore, the logic solver can prove that our programs behaves correctly in eve
 #bibliography("bibliography.bib", style: "ieee")
 
 #pagebreak()
+
+= Code Listings
+
+// FIXME @maybe get rid of "Listing x" in the outline
+#outline(
+  title: [Code Listings],
+  target: figure.where(kind: raw),
+)
+
 = Glossary
 // Your document body
 #print-glossary(
