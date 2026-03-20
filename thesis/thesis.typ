@@ -997,17 +997,22 @@ We also implemented a simple prototype filesystem using our wrapper, to provide 
 
 == CVEs
 
-// - why CVEs in general
-TODO /* FIXME quote */
+#gls("CVE", plural: true, first: true) /* FIXME @maybe long form */are standardized identifiers for publicly disclosed software vulnerabilities. Maintained by the MITRE Corporation, the CVE system provides a consistent way to reference and track security issues across tools, databases, and research. This standardization facilitates communication, comparison, and aggregation of vulnerability data.
 
-// what CVEs ? why filter
+Since our area of research centers around filesystems, we collected a sample of recent CVEs that were found inside the Linux kernel filesystem modules.
+A filter query (@cve_query) was crafted for the database to provide CVEs matching our criteria.// FIXME muss ich mehr drauf eingehen?
+From this selection, a suitable subset was extracted, focusing on CVEs where the description and metadata were complete, and the applicability of our approach could be assessed with certainty.// FIXME @ask @cwe-top25-2025 ist jetzt rausgefallen. noch geschickt einbauen oder nicht so wichtig?
 
-// evaluation strategy
+#figure(
+  ```
+  https://nvd.nist.gov/vuln/search#/nvd/home?cnaSourceIdList=386&sortOrder=5&sortDirection=2&offset=125&rowCount=25&keyword=filesystem&cpeFilterMode=applicability&cpeName=cpe:2.3:o:linux:linux_kernel:*:*:*:*:*:*:*:*&resultType=records
+  ```,
+  caption: [The query used to obtain a set of interesting CVEs.],
+) <cve_query>
 
-// result
-
-@cwe-top25-2025
-
+Our strategy for assessing the potential success of our approach was to match the techniques, design patters and language features used in our implementation against the programming error leading to the CVE in question.
+In other words, the final classfications results from the question whether --- if this error had occured during our development --- would it fall under one of our established strategies, and would it be preventable thereof.
+The following table shows the result of our evaluation, where each chosen CVE is characterized by a short description, a categorization in applicable/partially applicable/not applicable, and a rationale on our decision.
 
 #[
   #show table.cell: set text(size: 0.9em)

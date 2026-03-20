@@ -98,7 +98,10 @@
   ),
   (
     key: "CVE",
+    short: "CVE",
+    plural: "CVEs",
     long: "Common Vulnerabilites and Exposures / Common Vulnerability Enumeration (old)",
+    longplural: "Common Vulnerabilites and Exposures / Common Vulnerability Enumerations (old)",
     description: "An internationally accepted, de-facto standard, cataloguing system for vulnerabilities. In colloquial terms, \"a CVE\" refers to an entry in the CVE database, managed by MITRE.",
   ),
   // Add more terms
