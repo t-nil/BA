@@ -43,6 +43,7 @@
 // - every figure has a caption
 #show: rest => {
   thesis(
+    title: "When types prevent bugs: Exploring Rust's safety benefits in filesystem development",
     author: (name: "Florian Meißner", student-id: "3210376"),
     examinors: (first: "Prof. Dr. Hans Löhr", second: "Prof. Dr. Michael Zapf"),
     show_chapters: true,
@@ -93,7 +94,7 @@ This allows us to express function signatures of the kind discussed previously, 
 Unfortunately, not all languages provide the features necessary to formulate such powerful types.
 One prominent example is C, which is predominantly used in systems level programming, both in general and in the domain we are looking at in this work.
 Besides the basic datatypes that exist primarily to differentiate between CPU directives --- integers, floating points, characters, pointers --- users can create composites of these types via the `struct` or `union` constructs, and define functions to work on these datatypes only.
-But these type requirements can easily be subverted, because in C, casting between different types is often implicit, and there are no mechanism to enforce invariants of a type --- all user code that can "see" a struct can create or delete instances as it sees fit.
+But these type requirements can easily be subverted, because in C, casting between different types is often implicit, and there are no mechanism to enforce invariants on a type --- all user code that can "see" a struct can create or delete instances as it sees fit.
 
 That is why, in this work, we will look at Rust: a modern language that is gaining rapid traction in the area of systems programming, and has a strong, expressible type system as one of its flagship features.
 This enables us to explore the latter approach.
@@ -534,7 +535,7 @@ The ```rust Filesystem``` trait achieves these advantages by utilizing the const
 
 The following sections present a detailed elaboration of the concrete structure of our implementation, as well as the conditions and limitations exacted by our chosen frameworks.
 We first establish the areas of Rust that are of central relevance to our design, and the challenges they impose.
-This is followed by justified descriptions of the data structures we modeled and the design pattern we chose, as well as justifications on why we chose them.
+This is followed by justified descriptions of the data structures we modeled and the design pattern we chose, as well as justifications why we chose them.
 
 == Basic C interop
 // source: rust unsafe invariants
@@ -1069,7 +1070,7 @@ Since the C API does require an unsigned 32-bit integer, we override this behavi
 
 === `OpenFlags`
 
-`OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp 
+`OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp
 
 #figure(
   ```rust
@@ -1376,19 +1377,24 @@ For example, with Flux's state today, it would be possible not only to limit int
 This is achieved via converting the annotated constraints into logical predicates, which can then be algorithmically solved.
 Therefore, the logic solver can prove that our programs behaves correctly in every circumstance, even if the concrete runtime values are not known.
 
-#bibliography("bibliography.bib", style: "ieee")
-
-#pagebreak()
-
-= Code Listings
-
 // FIXME @maybe get rid of "Listing x" in the outline
-#outline(
-  title: [Code Listings],
-  target: figure.where(kind: raw),
-)
+#[
+  #counter(heading).update((first, ..n) => (0, ..n.pos()))
+  #set heading(numbering: "A", outlined: true)
+  #show outline: set heading(numbering: "A", outlined: true)
+  #show bibliography: set heading(numbering: "A", outlined: true)
 
-= Glossary
+  #bibliography("bibliography.bib", style: "ieee")
+
+  #pagebreak()
+
+  #outline(
+    title: [Code listings],
+    target: figure.where(kind: raw),
+  )
+
+  = Glossary
+]
 // Your document body
 #print-glossary(
   glossary-list,
