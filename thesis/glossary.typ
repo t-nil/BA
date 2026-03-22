@@ -66,6 +66,11 @@
     long: "the POSIX standard",
   ),
   (
+    key: "AST",
+    long: "abstract syntax tree",
+    description: "The prevalent data structure to semantically represent high-level program instructions in machine-understaandable form. ASTs are usually emitted by the parsing stage of the compiler.",
+  ),
+  (
     key: "procfs",
     short: "`procfs`",
     long: "the `procfs` filesystem",
@@ -105,4 +110,9 @@
     description: "An internationally accepted, de-facto standard, cataloguing system for vulnerabilities. In colloquial terms, \"a CVE\" refers to an entry in the CVE database, managed by MITRE.",
   ),
   // Add more terms
+  (
+    key: "cpp",
+    short: "C++",
+    description: "The C++ programming language.",
+  ),
 )

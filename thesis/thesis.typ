@@ -1,6 +1,5 @@
 // # Missing chapters
 // - TypedBuilder (a bit of a rework) + some of the data types
-// - Eval/CVEs
 //
 // # GLOBAL TODOS
 // - [x] fix glossary keys being displayed when no short variant exists
@@ -11,11 +10,13 @@
 //   - capitalize headers
 //
 // # FINAL REFACTOR
+// - !!! IMPLEMENTIERUNG NOCHMAL TESTEN !!!
 // - grep for glossary/abbrev instances
 //   - "therefor"
 //   - "atleast"
 // - and contractions
 //   - `'t`, `'ve`, `'re`, `that's`
+// - typed vs typestate builder (and builder pattern in general)
 // - schauen ob citation punctuation eingehalten wird.
 // - template
 //   - [ ] english translation
@@ -177,6 +178,8 @@ compared to C, it incorporates numerous improvements aimed at increasing safety 
 
 === Unsafe Rust
 
+// FIXME
+
 === Type system <ch_background.rust.type_system>
 
 @MILNER1978348 @WRIGHT199438
@@ -212,7 +215,7 @@ Second, since we aim to enhance type checking to also maintain our higher-level 
 Whereas static type checking would run this logic only during compilation, dynamic type checking leads to runtime overhead, which is usually a critical property of system code, to be reduced whenever possible.
 
 Rust is a predominantly statically typed language, with optional dynamic typing (see #cite(<rust-reference-1.92>, form: "prose", supplement: "10.1.15")) by the name of "trait objects".
-This is consistent with other high-level languages, like C++ #cite(<cppreference>, supplement: [section "Type"]).
+This is consistent with other high-level languages, like @cpp #cite(<cppreference>, supplement: [section "Type"]).
 This gives us the flexibility to fall back to dynamic typing whenever necessary, while having a rich toolset available for expressing type constraints in a static, compiler-verified fashion.
 
 // a.k.a. borrow checker :sunglasses:
@@ -225,8 +228,8 @@ One of the core improvements made by Rust in the area of static correctness is i
 
 In Rust, values are, by default, moved instead of copied.
 In fact, making a type copy-able involves implementing a special trait (```rust Clone```), while moving values is core to the type system and automatically available for every type.
-In contrast, types are memory-copied by default in C++, and must manually influence or prohibit that behavior @cppreference.
-Moving values was introduced in C++ 11 and has to be enabled manually.
+In contrast, types are memory-copied by default in @cpp, and must manually influence or prohibit that behavior @cppreference.
+Moving values was introduced in @cpp 11 and has to be enabled manually.
 This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear/* FIXME bessere ref? nicht mathe paper, was praktisches */.
 Since types can be "consumed", ergo moved into a consuming function without being returned, these consuming functions or methods can be used to implement resource management that would otherwise be difficult to do correctly.
 For example, a file handle can be closed, which would render any I/O operation on it ineffectual and would usually lead to an error.
@@ -803,7 +806,7 @@ Otherwise, runtime checks are emitted to still provide correctness, but at the d
 It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
 Due to the goals of this work, and time constraints, this was mostly skipped.
 
-=== Typed builder
+=== Typed builder <ch_impl.typed_builder>
 
 A pattern that is often encountered in Rust is a _builder_.
 It tries to solve the problem of value creation, where, for big types, many values must be provided, some of which are interdependant or introduce combined constraints, and some are only available at different times.
@@ -814,7 +817,7 @@ There are multiple ways to construct a value in Rust:
   As downsides, validation of the value as a whole is not possible, since a struct can always be legally constructed from legal values of all its elements, so any checks must be performed through the types of its members.
   Also, staggered initialization is not possible, since at construction point, every value has to be provided. It is possible to let construction use default values for some members, but this does not equal partial initialization, since it is not fundamentally possible to tell an uninitialized value from a valid value equalling the default value of the field.
   Thus, this loses some type safety.
-- *Constructor function*: Rust does not have constructors as language constructs, as opposed to e.g. C++.
+- *Constructor function*: Rust does not have constructors as language constructs, as opposed to e.g. @cpp.
   Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust also does not allow function overloading.
   Paired with lack of default parameter values, this makes writing constructors rather rigid, and is not substantially different to using raw structs.
   No staggered initialization is possible, as with a struct initialization, but interdependent validity checks can be performed;
@@ -971,14 +974,168 @@ This does not mean that `fuse_file_info` is not a good candidate for our methodo
 To the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which atleast provide a simple safeguard against erroneous bit operations.
 Additionally, some entries influence further behaviour of the filesystem and could probably be used to implement more correctness checks.
 
-=== `FileMode`
+=== `FileMode` <ch_impl.file_mode>
 
-`FileMode` is an abstraction that @libfuse provides, that encapsulates both file type and the permission mask.
+`FileMode` is an abstraction that @libfuse provides, that encapsulates both file type and permissions.
 To stay close to the lower level, we opted to keep this encapsulation.
+
+This data structure is a fitting target for our builder pattern (@ch_impl.typed_builder).
+It is the result of a set of labels, flags and numeric values, encoded as one integer.
+Furthermore, each of the values encoded is useful even for a minimal filesystem, as they represent basic properties of an entry in a @POSIX filesystem.
+Therefore, providing a builder to elegantly construct such values --- as is needed e.g. inside a `getattr` implementation --- will be useful for implementors of our API.
+We will implement two builders: one as a typestate builder, and the other as a classic runtime builder.
+This provides maximum flexibility for the user, since typestate builders can only be used when codepaths for initialization are static, without branching or loops.
+The runtime builder complements the API for those cases, at the cost of runtime overhead and less compile-time correctness checks.
+Both implementations will use macros to reduce boilerplate that would otherwise be significant and impractical.
+// FIXME cite doooooocsdocs
+
+@filemode_typed_builder shows the typestate builder implementation.
+The general pattern is to add fields to the builder struct for which builder setters should be generated, and optionally annotate them for special behavior.
+In our example the `setter(strip_bool)` annotation is used, which changes the signature of the setter method generated for a boolean field from ```rust fn foo(value: bool)``` to ```rust fn foo()```, where one-time invocation corresponds to a value of ```rust true```, and zero-time invocation to a value of ```rust false```.
+This is done to increase ergonomy.
+The struct itself is then annotated with the ```rust TypedBuilder``` derive macro, which results in the declared struct being nothing more than a pseudo-data-structure; a schema through which to generate the resulting builder type.
+The `build_method(into = FileMode)` ensures that the output type of the builder is not itself, but our target type ```rust FileMode```.
+Conversion is done idiomatically through Rust's ```rust From``` and ```rust From``` traits.
+In Rust, this is implemented via procedural macros that behave akin to compiler hooks.
+They get passed the annotated data structure in @AST form and produce a token stream which replaces the annotated structure.
+
+The runtime builder (@filemode_runtime_builder) implementation is similar.
+The `default = false` annotation creates a effect comparable to its beforementioned counterpart.
+If the setter on the boolean flags are not called, the `default` value of false will be assigned, making them optional.
+For the ergonomical part and the automatic conversion on build, no correspondence exists.
+
+#figure(
+  ```rust
+  #[derive(TypedBuilder)]
+  #[builder(build_method(into = FileMode))]
+  pub struct TypedModeBuilder {
+      file_type: FileType,
+      permissions: FilePermissions,
+
+      // `default = false` is implied by fallback
+      #[builder(setter(strip_bool(fallback = toggle_setuid)))]
+      setuid: bool,
+      #[builder(setter(strip_bool(fallback = toggle_setgid)))]
+      setgid: bool,
+      #[builder(setter(strip_bool(fallback = toggle_vtx)))]
+      vtx_flag: bool,
+  }
+  ```,
+  caption: [Typestate builder implementation of FileMode.],
+) <filemode_typed_builder>
+
+
+#figure(
+  ```rust
+  #[derive(Debug, Builder)]
+  pub struct RuntimeModeBuilder {
+      file_type: FileType,
+
+      permissions: FilePermissions,
+
+      #[builder(default = false)]
+      setuid: bool,
+      #[builder(default = false)]
+      setgid: bool,
+      #[builder(default = false)]
+      vtx_flag: bool,
+  }
+  ```,
+  caption: [Runtime builder implementation of FileMode.],
+) <filemode_runtime_builder>
+
+The `file_type` part of the whole mode type is modelled via an enum #cite(<rust-reference-1.92>, supplement: "ch. 6.7").
+In this case, we do not need to take advantage of the fact that Rust allowes enum variants to carry variable values of any type we might declare.
+A list of constants representing several choices can simply be modeled by prevalent, integer based enums like @cpp @cppreference.
+The internally used integer type will, by default, be automatically be chosen by the Rust compiler for optimization headroom.
+Since the C API does require an unsigned 32-bit integer, we override this behavior with ```rust #[repr(u32)]```, to not need type casts, and to make sure the enum values are guaranteed to fit.
+
+#figure(
+  ```rust
+  #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+  #[repr(u32)]
+  pub enum FileType {
+    BlockDevice = libfuse::S_IFBLK,
+    CharacterDevice = libfuse::S_IFCHR,
+    Fifo = libfuse::S_IFIFO,
+    RegularFile = libfuse::S_IFREG,
+    Directory = libfuse::S_IFDIR,
+    SymbolicLink = libfuse::S_IFLNK,
+    Socket = libfuse::S_IFSOCK,
+  }
+  ```,
+  caption: [Typestate builder implementation of FileMode.],
+) <openflags>
 
 === `OpenFlags`
 
-// TODO: add user code call to open, check that the function looks fully functional, then we can better use the solutions from this part.
+`OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp 
+
+#figure(
+  ```rust
+    /// This is repr(i32) because the target bitset (fuse_file_info::flags) and the `libc` constants are also i32.
+      #[repr(i32)]
+      enum OpenFlag {
+          Append = libc::O_APPEND,
+          Readonly = libc::O_RDONLY,
+          Writeonly = libc::O_WRONLY,
+          ReadPlusWrite = libc::O_RDWR,
+          Truncate = libc::O_TRUNC,
+          // TODO (maybe) exhaust
+      }
+
+      pub struct OpenFlags(i32);
+
+      impl OpenFlags {
+          bitflag_accessor!(i32, append, OpenFlag::Append);
+          bitflag_accessor!(i32, readonly, OpenFlag::Readonly);
+          bitflag_accessor!(i32, writeonly, OpenFlag::Writeonly);
+          bitflag_accessor!(i32, read_plus_write, OpenFlag::ReadPlusWrite);
+          bitflag_accessor!(i32, truncate, OpenFlag::Truncate);
+      }
+  }
+  ```,
+  caption: [OpenFlag enum .],
+) <openflags>
+
+#figure(
+  ```rust
+  macro_rules! bitflag_accessor {
+      ($inner_type:ty, $name:ident, $val:path) => {
+          fn $name(&self) -> bool {
+              self.0 & $val as $inner_type != 0
+          }
+      };
+  }
+  ```,
+  caption: [The ```rust bitflag_accessor!()``` macro.],
+) <bitflags_accessor>
+
+#figure(
+  ```rust
+  impl OpenFlags {
+      fn append(&self) -> bool {
+          self.0 & OpenFlag::Append as i32 != 0
+      }
+      fn readonly(&self) -> bool {
+          self.0 & OpenFlag::Readonly as i32 != 0
+      }
+      fn writeonly(&self) -> bool {
+          self.0 & OpenFlag::Writeonly as i32 != 0
+      }
+      fn read_plus_write(&self) -> bool {
+          self.0 & OpenFlag::ReadPlusWrite as i32 != 0
+      }
+      fn truncate(&self) -> bool {
+          self.0 & OpenFlag::Truncate as i32 != 0
+      }
+  }
+  ```,
+  caption: [The expanded code from ```rust bitflag_accessor!()```.],
+) <bitflags_accessor_expanded>
+
+
+
 // MAYBE explain macro `bitflag_accessor`
 
 == Error handling
