@@ -6,6 +6,10 @@
 // # GLOBAL TODOS
 // - [x] fix glossary keys being displayed when no short variant exists
 // - [x] fix "ich/mein/mir/mich"
+// - [ ] karens stuff
+// - [ ] test implementation and demo
+// - [x] zeilennummern im code
+// - `grep FIXME TODO MAYBE`
 // # STYLE
 // @löhr: deutsch passiviert / englisch "we"
 // - https://academics.umw.edu/swc/files/2024/02/IEEE-Formatting-Guidelines.pdf
@@ -38,6 +42,20 @@
 #register-glossary(glossary-list)
 
 #import "@local/ohm:0.1.0": thesis
+
+// line numbers
+#show raw.where(block: true): code => {
+  show raw.line: line => {
+    if line.number < 10 {
+      text(fill: gray)[~#line.number]
+    } else {
+      text(fill: gray)[#line.number]
+    }
+    h(1em)
+    line.body
+  }
+  code
+}
 
 // requirements:
 // - author - dict{name, student-id}
@@ -315,8 +333,7 @@ This handling is implicit because, since the return type does not inherently enc
 Forgetting to insert such a check almost always leads to unsoundness, since a potential error will be handled as some sort of valid success value.
 Circumstances are even more difficult when dealing with `void` functions, which do not return a value but rely on side effects instead.
 Since no return value handling is required for "normal", non-error code paths, the chance of forgetting to check for errors is increased again.
-Although some C compilers define custom extension attributes that can annotate a function to emit a warning when the function's result is unused#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html], no standardized solution exists.
-@tian2017automatically
+Although some C compilers define custom extension attributes that can annotate a function to emit a warning when the function's result is unused#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html], no standardized solution exists @tian2017automatically.
 
 Rust solves this issue by combining the strong type system guarantees with sum types, also known as tagged unions.
 Unions, as they are used in C, are usually only useful in implementing low-level data structures or protocols where memory efficiency is of grand importance.
@@ -824,7 +841,7 @@ There are multiple ways to construct a value in Rust:
 - *Struct as constructor parameter*:
   An elegant combination of the two concepts above is to use a dedicated initialization struct, that is either passed to a constructor or can be cast to the target type.
   It acts as a sort of dictionary, or list of named parameters.
-  This emulates named arguments and also works with private fields, since the target type construction is hidden from the user.I
+  This emulates named arguments and also works with private fields, since the target type construction is hidden from the user.
   It still does not solve staggered construction, for the same reasons as stated above.
   But one could maybe imagine using this pattern multiple times, where each initialization struct sets some parameters and generates the next stage of initialization via an opaque intermediate type, thus providing multiple phases of initialization.
   Implementing this from hand would be complex and error-prone, since every combination of initialized-ness has to be coded explicitly, which leads to $$ n! $$ cases, where $$n$$ equals the number of initialization parameters.
@@ -839,7 +856,8 @@ There are multiple ways to construct a value in Rust:
   This improves readability and provides additional correctness checks.
   Also, only the validity closures live in runtime; the basic correctness checks of every field being set the right amount of times are modeled within the type system, leading to compilation errors when disregarded, which is one of our goals.
 
-  The implementation of this builder pattern creates a utility intermediate type for every possible combination of whether a type has been set. An example would be a builder for a struct ```rust struct Point { x: f32, y: f32 }```, which represents a point on a cartesian coordinate system. A manual implementation of a builder could look like this:
+  The implementation of this builder pattern creates a utility intermediate type for every possible combination of whether a type has been set. An example would be a builder for a struct ```rust struct Point { x: f32, y: f32 }```, which represents a point on a cartesian coordinate system. @typestate_builder_manual_1 shows one possible implementation of a typestate builder on the point struct.
+  This minimal example is chosen purposely because the number of required states grows factorial with the number of parameters.
 
 #figure(
   ```rust
@@ -861,7 +879,7 @@ There are multiple ways to construct a value in Rust:
   }
 
   impl Point {
-    pub fn build() -> PointWithNothingSet { /* ... */ }
+    pub fn builder() -> PointWithNothingSet { /* ... */ }
   }
 
   ```,
@@ -871,8 +889,8 @@ There are multiple ways to construct a value in Rust:
 In this case, the type system makes it invalid to set an x or y coordinate multiple times or forget to set it.
 There are only two possible ways to obtain a value of type ```rust Point```:
 
-- calling ```rust Point::build().set_x().set_y()```
-- calling ```rust Point::build().set_y().set_x()```
+- calling ```rust Point::builder().set_x().set_y()```
+- calling ```rust Point::builder().set_y().set_x()```
 
 Therefore we can ensure proper initialization of the point value.
 
@@ -891,7 +909,7 @@ Another way of modeling this pattern uses generics. @typestate_builder_manual_2 
   impl PointBuilderState for YSet {};
 
   impl Point {
-    pub fn build() -> PointBuilder<NothingSet> { /* ... */ }
+    pub fn builder() -> PointBuilder<NothingSet> { /* ... */ }
   }
 
   impl PointBuilder<NothingSet> {
@@ -912,25 +930,40 @@ Another way of modeling this pattern uses generics. @typestate_builder_manual_2 
 ) <typestate_builder_manual_2>
 
 // TODO more theoretical bla on state machines / DEAs
-On closer inspection this pattern bears resemblance to a state machine, where states are marker structs --- structs with no associated data fields --- that implement a marker trait --- analogously, a trait without associated items.
+On closer inspection this pattern bears resemblance to a state machine. States correspond to marker structs --- structs with no associated data fields --- that implement a marker trait --- analogously, a trait without associated items.
 Methods of these concrete types, which after @monomorphization are the ```rust PointBuilder``` with a concrete state as type parameter return a ```rust PointBuilder``` with a different state type. Thereby they represent transitions between those states.
 This is intuitive because, as a transition can only be applied to the start state and results in the end state of that transition, methods of a type can only be run on an existing value of that type, and always produce the return value.
 
-The implementation using generics has a few advantages:
-Since all intermediate types are specializations of a general builder type, there can be methods implemented on the general builder type which correspond to transitions on any starting state. /* FIXME macht das hier sinn? überhaupt nochmal typestate<->builder überdenken */
+The implementation using generics has one main avantage:
+Since all intermediate types are specializations of a general builder type, there can be methods implemented on the general builder type which correspond to transitions on any starting state.
 
-While a typestate builder has many advantages in statical correctness, conditional branches can be difficult to handle.
+While a typestate builder has many advantages in statical correctness, it does not work well with non-linear control flow, such as conditional blocks and loops.
 That is because every state of the builder is effectively a different type, and Rust does not allow items to have different types depending on a branch.
-This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value/* FIXME example */.
+This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value/* FIXME example */ (@typestate_builder_conditional).
+
+#figure(
+  ```rust
+  // WRONG. This will not compile because of type mismatches. The variable `builder` cannot be of type `PointBuilder<XSet>` in one branch and `PointBuilder<YSet>` in the other.
+  let builder = if cond {
+      Point::builder().set_x(42.0)
+  } else {
+      Point::builder().set_y(42.0)
+  };
+
+  // Correct.
+  let builder = Point::builder()
+      .set_x( if cond { 42.0 } else { default_x } )
+      .set_y( if !cond { 42.0 } else { default_y } );
+  ```,
+  caption: [An illustration of the problems when using the typestate pattern in conditional blocks.],
+) <typestate_builder_conditional>
+
 Runtime builders do not have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
 
 Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known and flexibility with runtime checks when it is not.
 
 
-// FIXME @typed_builder_docs
-
-
-
+// FIXME @typed_builder_docste_builder_manual_2>
 
 // - question: how do I model type creation?
 //   - free function: no named parameters, gets unreadable quickly, no optional parameters
@@ -953,7 +986,7 @@ Because of the tradeoffs discussed between the different solutions, it can be ad
 === `stat` <ch_stat>
 
 The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
-This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- it is permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory or opening a file.
+This set of attributes is needed for most interaction, because it provides data not limited to: the type of the entry --- file, directory, symbolic link or other --- its permissions, size and modification dates. It is usually the set of information our wrapper has to provide to the surrounding system when some interaction with the filesystem takes place, e.g. listing or changing into a directory or opening a file.
 @stat.3type_manpage
 
 Our attempt at modeling led us to break down the struct into smaller parts, which require more attention:
@@ -969,7 +1002,7 @@ Although this type is a parameter to every operation implemented, it is optional
 In fact, due to the limited nature of our experiment, because we do not work with `open` and file descriptors, it can be assumed that the struct never be initialized.
 Therefore, modeling was skipped.
 This does not mean that `fuse_file_info` is not a good candidate for our methodology.
-To the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which at least provide a simple safeguard against erroneous bit operations.
+On the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which at least provide a simple safeguard against erroneous bit operations.
 Additionally, some entries influence further behaviour of the filesystem and could probably be used to implement more correctness checks.
 
 === `FileMode` <ch_impl.file_mode>
@@ -991,14 +1024,14 @@ Both implementations will use macros to reduce boilerplate that would otherwise 
 The general pattern is to add fields to the builder struct for which builder setters should be generated, and optionally annotate them for special behavior.
 In our example the `setter(strip_bool)` annotation is used, which changes the signature of the setter method generated for a boolean field from ```rust fn foo(value: bool)``` to ```rust fn foo()```, where one-time invocation corresponds to a value of ```rust true```, and zero-time invocation to a value of ```rust false```.
 This is done to increase ergonomy.
-The struct itself is then annotated with the ```rust TypedBuilder``` derive macro, which results in the declared struct being nothing more than a pseudo-data-structure; a schema through which to generate the resulting builder type.
+The struct itself is then annotated with the ```rust TypedBuilder``` derive macro, which results in the declared struct being nothing more than a pseudo-data-structure; a schema through which the resulting builder type is generated.
 The `build_method(into = FileMode)` ensures that the output type of the builder is not itself, but our target type ```rust FileMode```.
 Conversion is done idiomatically through Rust's ```rust From``` and ```rust From``` traits.
 In Rust, this is implemented via procedural macros that behave akin to compiler hooks.
 They get passed the annotated data structure in @AST form and produce a token stream which replaces the annotated structure.
 
 The runtime builder (@filemode_runtime_builder) implementation is similar.
-The `default = false` annotation creates a effect comparable to its beforementioned counterpart.
+The `default = false` annotation creates an effect comparable to its beforementioned counterpart.
 If the setter on the boolean flags are not called, the `default` value of false will be assigned, making them optional.
 For the ergonomical part and the automatic conversion on build, no correspondence exists.
 
@@ -1046,7 +1079,7 @@ The `file_type` part of the whole mode type is modelled via an enum #cite(<rust-
 In this case, we do not need to take advantage of the fact that Rust allowes enum variants to carry variable values of any type we might declare.
 A list of constants representing several choices can simply be modeled by prevalent, integer based enums like @cpp @cppreference.
 The internally used integer type will, by default, be automatically be chosen by the Rust compiler for optimization headroom.
-Since the C API does require an unsigned 32-bit integer, we override this behavior with ```rust #[repr(u32)]```, to not need type casts, and to make sure the enum values are guaranteed to fit.
+Since the C API does require an unsigned 32-bit integer, we override this behavior with ```rust #[repr(u32)]``` to not need type casts and to make sure the enum values are guaranteed to fit.
 
 #figure(
   ```rust
@@ -1068,6 +1101,7 @@ Since the C API does require an unsigned 32-bit integer, we override this behavi
 === `OpenFlags`
 
 `OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp enum to model flags which are internally represented as integers.
+
 
 #figure(
   ```rust
@@ -1139,16 +1173,60 @@ Since the C API does require an unsigned 32-bit integer, we override this behavi
 == Error handling
 // allg: conversion between rust `Result<>` and errno
 
-While @libfuse and Rust both return an error value
+A central challenge in the FFI layer is the mismatch between idiomatic Rust error handling and the calling convention expected by the target C interface.
+Internally, fallible operations are naturally represented as ```rust struct Result<T, E>```, whereas FFI functions must return an `i32` status code and signal failure via negative `errno` values.
+Consequently, each operation that may fail has to be translated from a Rust-level error into the corresponding integer error code before crossing the language boundary.
 
-// `{try,bail,ensure}_errno!()`
-// Verweis auf `panics/unwind across FFI`
+To reduce the resulting boilerplate, this implementation uses a small set of macros that emulate the ergonomics of Rust's `?` operator for functions which return an `errno`.
+In particular, ```rust try_errno!()``` destructures a ```rust Result<_, (String, Errno)>```: on success it yields the contained value, and on failure it logs diagnostic information and immediately returns the negated errno value required by the FFI signature.
+Similarly, ```rust ensure_errno!()``` is used for precondition checks such as null-pointer and alignment validation, and aborts the function early with an appropriate error code if an invariant is violated.
+The ```rust bail_errno!``` macro provides the common low-level mechanism for emitting an error message and performing the early return.
+Code using these macros is more concise and expresses clear intent, instead of cluttering the program logic with `match` blocks for error propagation.
+
+A more idiomatic approach would be using the `?` operator directly, but implementing it on a user-defined type is currently not possible in stable Rust @rust_try_trait_v2_tracking_issue_2021.
+Switching to the unstable toolchain, which has a shorter release cycle and does not guarantee not introducing breaking changes between releases, could potentially lead to this code not being compilable with future Rust versions, which was why we decided against it.
+// FIXME prototype doch mit reinnehmen.
+
+
+#figure(
+  ```rust
+  macro_rules! ensure_errno {
+      ($test:expr, $errno:expr) => {{
+          let test = $test;
+          if !(test) {
+              bail_errno!(concat!("Assertion failed: ", stringify!($test)), $errno);
+          }
+      }};
+  }
+
+  macro_rules! bail_errno {
+      ($error_str:expr, $errno:expr) => {{
+          let error_str = $error_str;
+          let errno = $errno;
+          // error logging …
+          return -(errno as i32);
+      }};
+  }
+
+  macro_rules! try_errno {
+      ($result:expr) => {{
+          let result: Result<_, (String, Errno)> = $result;
+          match result {
+              Ok(x) => x,
+              Err((e, errno)) => bail_errno!(e, errno),
+          }
+      }};
+  }
+  ```,
+  caption: [The expanded code from ```rust bitflag_accessor!()```.],
+) <bitflags_accessor_expanded>
+
 
 = Evaluation <ch_eval>
 
 To evaluate the effectiveness of our approach, we collected a sample of CVEs found in the filesystem modules of the Linux kernel in recent years.
 We then categorized them based on whether the approach discussed here would have been effective in preventing them.
-We also implemented a simple prototype filesystem using our wrapper, to provide a reference point for the ergonomy and expressiveness of the API.
+We also implemented a simple prototype filesystem using our wrapper to provide a reference point for the ergonomy and expressiveness of the API.
 
 == CVEs
 
@@ -1166,7 +1244,7 @@ From this selection, a suitable subset was extracted, focusing on CVEs where the
 ) <cve_query>
 
 Our strategy for assessing the potential success of our approach was to match the techniques, design patters and language features used in our implementation against the programming error leading to the CVE in question.
-In other words, the final classfications results from the question whether --- if this error had occured during our development --- would it fall under one of our established strategies, and would it be preventable thereof.
+In other words, the final classifications results from the question whether --- if this error had occured during our development --- it would fall under one of our established strategies, and whether it would be preventable.
 The following table shows the result of our evaluation, where each chosen CVE is characterized by a short description, a categorization in applicable/partially applicable/not applicable, and a rationale on our decision.
 
 #[
@@ -1284,7 +1362,7 @@ This could be made possible as an additional opt-in API, but would almost certai
 
 = Conclusion <ch_conclusion>
 
-In this thesis, we explored the benefits of a strong type system regarding safety in operating systems programming, by the examples of Rust and filesystems.
+In this thesis, we explored the benefits of a strong type system regarding safety in operating systems programming, using the examples of Rust and filesystems.
 This combination is of particular relevance, given the recent Linux kernel developments in that same direction @rustforlinux-website @linuxkernel-rust-docs, and the multitude of publications regarding safe system development in Rust @10.1145_3102980.3103006 @10592287 @jung2020safe @10.1145_3360573 @287352 @bugden2022rustprogramminglanguagesafety @Oikawa2023.
 Strong type systems allow modeling contracts around APIs and data structures inside the code, which makes them automatically verifiable by static analysis.
 This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
@@ -1340,7 +1418,7 @@ This could for example have been used to limit the ```rust struct FilePermission
 Failure to uphold the range limits would then result in a compiler error.
 
 // maybe ein absatz über mehr CVEs evaluieren
-Since the goal of this thesis was to evaluate the effect of modern languages with strong type systems on systems programming, limiting our evaluation to filesystems creates a weak evidential basis.
+Since the goal of this thesis is to evaluate the effect of modern languages with strong type systems on systems programming, limiting our evaluation to filesystems creates a weak evidential basis.
 A future project could broaden the filter mask for CVEs, and take into consideration both other @OS:pl and other subsystems of the Linux kernel.
 Selecting a greater time span would also be possible.
 
