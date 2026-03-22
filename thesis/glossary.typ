@@ -112,7 +112,12 @@
   // Add more terms
   (
     key: "cpp",
-    short: "C++",
-    description: "The C++ programming language.",
+    short: [C + +],
+    description: "The C + + programming language.",
+  ),
+  (
+    key: "unsafe",
+    short: [FIXME],
+    description: [#box[FIXME]],
   ),
 )
