@@ -194,7 +194,7 @@ compared to C, it incorporates numerous improvements aimed at increasing safety 
 === Unsafe Rust
 
 Rust has a feature called "unsafety", and a corresponding `unsafe` keyword #cite(<rust-reference-1.92>, supplement: "17.").
-Using on a function or code block switches into a superset of the "safe" Rust language --- the one usually referred to as Rust --- to "unsafe Rust".
+Using it on a function or code block switches into "unsafe Rust", a superset of the "safe" Rust language.
 Certain operations, like dereferencing raw pointers or declaring FFI interfaces, are only allowed in unsafe Rust.
 This is because these operations circumvent parts of the language's safeguards, which has the effect that guarantees made by the language specification --- such as memory safety and impossibility of data races --- can no longer be enforced automatically by the compiler.
 On the other hand, unsafe Rust is important for systems programming, as direct memory access is needed for hardware interaction.
@@ -203,7 +203,7 @@ Performance benefits can also be a reason to use unsafe Rust.
 
 When writing unsafe Rust, the developer is solely responsible for upholding the several invariants that are integral for the soundness of Rust code.
 #cite(<rust-reference-1.92>, supplement: "17.2") shows a list of cases that, when ignored, would otherwise lead to @UB.
-This makes unsafe Rust a double-edged sword: it is required for systems programming, but best avoided when possible since it increases the number of possible @UB scenarios and therefore decreases the safety of the system.
+This makes unsafe Rust a double-edged sword: it is required for systems programming, but should be avoided if possible since it increases the number of potential @UB scenarios and therefore decreases the safety of the system.
 
 === Type system <ch_background.rust.type_system>
 
@@ -835,13 +835,13 @@ There are multiple ways to construct a value in Rust:
   Also, staggered initialization is not possible, since at construction point, every value has to be provided. It is possible to let construction use default values for some members, but this does not equal partial initialization, since it is not fundamentally possible to tell an uninitialized value from a valid value equalling the default value of the field.
   Thus, this loses some type safety.
 - *Constructor function*: Rust does not have constructors as language constructs, as opposed to e.g. @cpp.
-  Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust also does not allow function overloading.
+  Idiomatically, constructors are member functions with the name `new()` or `new_*()`, since Rust does not allow function overloading.
   Paired with lack of default parameter values, this makes writing constructors rather rigid, and is not substantially different to using raw structs.
   No staggered initialization is possible, as with a struct initialization, but interdependent validity checks can be performed;
   with the caveat, that when a type provides multiple constructors, all of them must duplicate the verification logic or use a private shared constructor that centralizes the checks.
   This is also manual, and can be overlooked, and the probability of oversight increases with the count of constructors.
 - *Struct as constructor parameter*:
-  An elegant combination of the two concepts above is to use a dedicated initialization struct, that is either passed to a constructor or can be cast to the target type.
+  An elegant combination of the two concepts above is to use a dedicated initialization struct that is either passed to a constructor or can be cast to the target type.
   It acts as a sort of dictionary, or list of named parameters.
   This emulates named arguments and also works with private fields, since the target type construction is hidden from the user.
   It still does not solve staggered construction, for the same reasons as stated above.
@@ -936,7 +936,7 @@ On closer inspection this pattern bears resemblance to a state machine. States c
 Methods of these concrete types, which after @monomorphization are the ```rust PointBuilder``` with a concrete state as type parameter return a ```rust PointBuilder``` with a different state type. Thereby they represent transitions between those states.
 This is intuitive because, as a transition can only be applied to the start state and results in the end state of that transition, methods of a type can only be run on an existing value of that type, and always produce the return value.
 
-The implementation using generics has one main avantage:
+The implementation by using generics has one main avantage:
 Since all intermediate types are specializations of a general builder type, there can be methods implemented on the general builder type which correspond to transitions on any starting state.
 
 While a typestate builder has many advantages in statical correctness, it does not work well with non-linear control flow, such as conditional blocks and loops.
@@ -1169,7 +1169,7 @@ Since the C API does require an unsigned 32-bit integer, we override this behavi
 == Error handling
 // allg: conversion between rust `Result<>` and errno
 
-A central challenge in the FFI layer is the mismatch between idiomatic Rust error handling and the calling convention expected by the target C interface.
+A major challenge in the FFI layer is the mismatch between idiomatic Rust error handling and the calling convention expected by the target C interface.
 Internally, fallible operations are naturally represented as ```rust struct Result<T, E>```, whereas FFI functions must return an `i32` status code and signal failure via negative `errno` values.
 Consequently, each operation that may fail has to be translated from a Rust-level error into the corresponding integer error code before crossing the language boundary.
 
@@ -1180,7 +1180,7 @@ The ```rust bail_errno!``` macro provides the common low-level mechanism for emi
 Code using these macros is more concise and expresses clear intent, instead of cluttering the program logic with `match` blocks for error propagation.
 
 A more idiomatic approach would be using the `?` operator directly, but implementing it on a user-defined type is currently not possible in stable Rust @rust_try_trait_v2_tracking_issue_2021.
-Switching to the unstable toolchain, which has a shorter release cycle and does not guarantee not introducing breaking changes between releases, could potentially lead to this code not being compilable with future Rust versions, which was why we decided against it.
+Switching to the unstable toolchain, which has a shorter release cycle and does not guarantee that breaking changes are not introduced between releases, could potentially lead to this code not being compilable with future Rust versions, which was why we decided against it.
 
 #figure(
   ```rust
