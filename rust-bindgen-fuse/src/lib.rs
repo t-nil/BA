@@ -814,6 +814,8 @@ pub fn fuse_main<FS: Filesystem>(
         fallocate: None,
         copy_file_range: None,
         lseek: None,
+        statx: None,
+        syncfs: None,
     };
 
     unsafe {
