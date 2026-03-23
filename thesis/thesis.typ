@@ -4,7 +4,7 @@
 // - [x] fix glossary keys being displayed when no short variant exists
 // - [x] fix "ich/mein/mir/mich"
 // - [x] karens stuff
-// - [ ] test implementation and demo
+// - [x] test implementation and demo
 // - [x] zeilennummern im code
 // - `grep FIXME TODO MAYBE`
 // # STYLE
@@ -13,7 +13,7 @@
 //   - capitalize headers
 //
 // # FINAL REFACTOR
-// - !!! IMPLEMENTIERUNG NOCHMAL TESTEN !!!
+// - [x] !!! IMPLEMENTIERUNG NOCHMAL TESTEN !!!
 // - grep for glossary/abbrev instances
 //   - "therefor"
 //   - "atleast"
@@ -22,8 +22,8 @@
 // - typed vs typestate builder (and builder pattern in general)
 // - schauen ob citation punctuation eingehalten wird.
 // - template
-//   - [ ] english translation
-//   - refs auf unterkapitel werden eh nicht übersetzt -> consistency (siehe einleitung.schluss)
+//   - [x] english translation
+//   - [x] refs auf unterkapitel werden eh nicht übersetzt -> consistency (siehe einleitung.schluss)
 
 #import "@preview/oxdraw:0.1.0": oxdraw as mermaid
 
@@ -193,16 +193,21 @@ compared to C, it incorporates numerous improvements aimed at increasing safety 
 
 === Unsafe Rust
 
-// FIXME
+Rust has a feature called "unsafety", and a corresponding `unsafe` keyword #cite(<rust-reference-1.92>, supplement: "17.").
+Using on a function or code block switches into a superset of the "safe" Rust language --- the one usually referred to as Rust --- to "unsafe Rust".
+Certain operations, like dereferencing raw pointers or declaring FFI interfaces, are only allowed in unsafe Rust.
+This is because these operations circumvent parts of the language's safeguards, which has the effect that guarantees made by the language specification --- such as memory safety and impossibility of data races --- can no longer be enforced automatically by the compiler.
+On the other hand, unsafe Rust is important for systems programming, as direct memory access is needed for hardware interaction.
+Also, since Rust's safety guarantees try to be conservative in that they rather refuse a correct program than allowing an incorrect one, unsafe Rust is sometimes needed to implement code which is unprovably correct.
+Performance benefits can also be a reason to use unsafe Rust.
+
+When writing unsafe Rust, the developer is solely responsible for upholding the several invariants that are integral for the soundness of Rust code.
+#cite(<rust-reference-1.92>, supplement: "17.2") shows a list of cases that, when ignored, would otherwise lead to @UB.
+This makes unsafe Rust a double-edged sword: it is required for systems programming, but best avoided when possible since it increases the number of possible @UB scenarios and therefore decreases the safety of the system.
 
 === Type system <ch_background.rust.type_system>
 
-@MILNER1978348 @WRIGHT199438
-
-@jung2020safe @10.1145_3360573
-// TODO more in-depth
-
-Rust's type system, or rather the specific properties thereof, are an important factor for its usability in correctness-centered software.
+Rust's type system, or rather the specific properties thereof, are an important factor for its usability in correctness-centered software @10.1145_3360573 @jung2020safe.
 We will focus on two important characterizations of a type system: static vs. dynamic, and strong vs. weak.
 We define (as seen in #cite(<10.1145_942572.807045>, form: "prose")) a strong type system as a system where every function that expects a certain type of parameter will only accept parameters of that type.
 In other words, the less implicit type conversions are performed by a type system, the stronger it is deemed.
@@ -245,7 +250,7 @@ In Rust, values are, by default, moved instead of copied.
 In fact, making a type copyable involves implementing a special trait (```rust Clone```), while moving values is core to the type system and automatically available for every type.
 In contrast, types are memory-copied by default in @cpp, and must manually influence or prohibit that behavior @cppreference.
 Moving values was introduced in @cpp 11 and has to be enabled manually.
-This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear/* FIXME bessere ref? nicht mathe paper, was praktisches */.
+This core difference, called "linear types" in type theory, brings a range of benefits to the type system @wadler1990linear @jung2020safe.
 Since types can be "consumed", ergo moved into a consuming function without being returned, these consuming functions or methods can be used to implement resource management that would otherwise be difficult to do correctly.
 For example, a file handle can be closed, which would render any I/O operation on it ineffectual and would usually lead to an error.
 In languages where values are copied by default or can be copied without limitations, this creates inconsistencies: If the handle is copied, then one copy closed, how should the second copy behave? How can a user of the API guarantee that the handle is not used after closing, as it could have been copied a number of times?
@@ -507,7 +512,8 @@ For each invariant that is regarded impossible to check in this sense, we docume
 // - evaluate if my rust constructs can fix those weaknesses. if not, try to improve bindings.
 // - create stats and tables (e.g. percentage CVEs prevented, taken from a) sub section X, b) time span Y, etc.)
 
-The CVE (Common Vulnerabilities and Exposures) system is an internationally accepted, defacto standard, cataloguing system for vulnerabilities FIXME. In colloquial terms, "a CVE" refers to an entry in the CVE database, managed by MITRE.
+The CVE (Common Vulnerabilities and Exposures) system is an internationally accepted, defacto standard, cataloguing system for vulnerabilities.
+In colloquial terms, "a CVE" refers to an entry in the CVE database, managed by MITRE.
 For evaluation, we collect a sample of recent recorded CVEs from the Linux kernel filesystem subsystem.
 This e.g. includes the @VFS and several shipped filesystem implementations.
 We utilize a search mask for the National Vulnerability Database#footnote[https://nvd.nist.gov/] for filtering the relevant data.
@@ -675,7 +681,7 @@ After the user code has been executed, the results are converted back into @libf
 
 Next up is a detailed description of the required calls, accompanied with their respective C and Rust signatures.
 
-=== getattr
+=== `getattr`
 
 ```c int(* 	getattr )(const char *, struct stat *, struct fuse_file_info *fi)```
 ```rust pub unsafe extern "C" fn getattr<FS: Filesystem>(
@@ -693,7 +699,7 @@ We chose to mostly ignore the `fuse_file_info` for now, as it is only used under
 
 It is the users job to create an instance of `struct Stat` and pass it back to us. This @newtype_struct contains a valid `stat` fuse struct inside, which is needed as return value written into the output pointer argument of same name, and can trivially convert to one.
 
-=== readdir
+=== `readdir`
 
 This function's job is, given a directory as path, provide a list of child entries, enabling directory content listing (as e.g. in the `ls` command). An offset can be provided to support partial listings over multiple calls, however we chose to ignore this, as is allowed in the documentation #cite(<libfuse_docs>, supplement: "p. structfuse__operations.html").
 
@@ -731,7 +737,7 @@ Some of the filler functions parameters correspond to entry metadata, others, li
   caption: [Excerpt from the `readdir` trampoline, passing the Rust vector of directory entries into the C filler function.],
 ) <readdir_filler_fn>
 
-=== read
+=== `read`
 
 The `read` operation provides us with the means to fetch the content of files, complementing our set of operations to obtain a usable, if minimal, filesystem.
 It takes as parameters a size and an offset, determining the range of content to be read, as well as a C character array to store the data in.
@@ -1175,8 +1181,6 @@ Code using these macros is more concise and expresses clear intent, instead of c
 
 A more idiomatic approach would be using the `?` operator directly, but implementing it on a user-defined type is currently not possible in stable Rust @rust_try_trait_v2_tracking_issue_2021.
 Switching to the unstable toolchain, which has a shorter release cycle and does not guarantee not introducing breaking changes between releases, could potentially lead to this code not being compilable with future Rust versions, which was why we decided against it.
-// FIXME prototype doch mit reinnehmen.
-
 
 #figure(
   ```rust
@@ -1224,7 +1228,7 @@ We also implemented a simple prototype filesystem using our wrapper to provide a
 
 Since our area of research centers around filesystems, we collected a sample of recent CVEs that were found inside the Linux kernel filesystem modules.
 A filter query (@cve_query) was crafted for the database to provide CVEs matching our criteria.
-From this selection, a suitable subset was extracted, focusing on CVEs where the description and metadata were complete, and the applicability of our approach could be assessed with certainty.// FIXME @ask @cwe-top25-2025 ist jetzt rausgefallen. noch geschickt einbauen oder nicht so wichtig?
+From this selection, a suitable subset was extracted, focusing on CVEs where the description and metadata were complete, and the applicability of our approach could be assessed with certainty.// _FIXME @ask @cwe-top25-2025 ist jetzt rausgefallen. noch geschickt einbauen oder nicht so wichtig?
 
 #figure(
   ```
@@ -1302,7 +1306,7 @@ The following table shows the result of our evaluation, where each chosen CVE is
 
       [2024-47699],
       [A potential null pointer dereference was found inside `nilfs` when dealing with a corrupted filesystem.],
-      [While unsafe Rust does not prevent accidental null pointer /* FIXME NonNull? */ derefs, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
+      [While unsafe Rust does not prevent accidental null pointer derefs, since we abstract away pointer access in our wrapper, and let the user deal only with native Rust owned values and references, this problem would be solved by @Libfuse_wrapper],
       [🟢],
     )],
     caption: "A listing of selected CVEs plus their assessment in terms of preventability",
@@ -1346,10 +1350,6 @@ Most low-level details and pitfalls were abstracted away.
 One aspect that required a disproportionally high amount of SLoC was dealing with partial and offset reads, but offloading that to the wrapper would mean that the user has to provide an array with the full file content already contained, only for the wrapper to calculate the correct offsets.
 This could be made possible as an additional opt-in API, but would almost certainly result in major inefficiencies, as the filesystem has to procure the whole file's content every time a partial read is requested.
 
-// FIXME _ask more?
-// - beispiel für "most lowlevel details…"
-// -
-
 = Conclusion <ch_conclusion>
 
 In this thesis, we explored the benefits of a strong type system regarding safety in operating systems programming, using the examples of Rust and filesystems.
@@ -1364,10 +1364,6 @@ A minimal filesystem in Rust was created, both to test the practical viability a
 We found that our approach could in fact increase the safety of filesystems currently included in the Linux kernel.
 Furthermore, since most improvements were implemented as compile-time verifications, it can be assumed that their runtime impact will be nonexisting, acknowledging the need for @OS routines to be maximally performant.
 We estimate that a substantial amount of security and safety issues could be prevented in the future by gradually moving kernel subsystems and modules to languages with strong type system guarantees.
-
-// FIXME:
-// - ich merk grad, ich mach ja wirklich wenig zu memory safety. in erster linie gehe ich immer auf die tollen typsystem sachen ein. soll ich memory safety ejetz hier überhaupt erwähnen, oder insgesamt vlt mehr?
-// - vlt sollte ich doch nen abschnitt machen, wo ich strong/strict type systems mal sauber definiere. *oder hab ich das schon? O_o*
 
 == Limitations
 
@@ -1442,7 +1438,6 @@ For example, with Flux's state today, it would be possible not only to limit int
 This is achieved via converting the annotated constraints into logical predicates, which can then be algorithmically solved.
 Therefore, the logic solver can prove that our programs behaves correctly in every circumstance, even if the concrete runtime values are not known.
 
-// FIXME @maybe get rid of "Listing x" in the outline
 #[
   #counter(heading).update((first, ..n) => (0, ..n.pos()))
   #set heading(numbering: "A", outlined: true)
@@ -1459,8 +1454,13 @@ Therefore, the logic solver can prove that our programs behaves correctly in eve
   )
 
   = Glossary
+
+  #print-glossary(
+    glossary-list,
+  )
+
+  = Declaration regarding use of Large Language Models (LLMs) and generative AI
+
+  For creation of this work, the LLMs ChatGPT 5.2 and 5.4 were used for phrasing and research assistance.
+  I am aware that I am fully responsible for the content of this thesis.
 ]
-// Your document body
-#print-glossary(
-  glossary-list,
-)
