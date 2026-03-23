@@ -1,12 +1,9 @@
 // # Missing chapters
-// - TypedBuilder (a bit of a rework) + some of the data types
-// - error handling
-// - openflags
 //
 // # GLOBAL TODOS
 // - [x] fix glossary keys being displayed when no short variant exists
 // - [x] fix "ich/mein/mir/mich"
-// - [ ] karens stuff
+// - [x] karens stuff
 // - [ ] test implementation and demo
 // - [x] zeilennummern im code
 // - `grep FIXME TODO MAYBE`
@@ -287,7 +284,7 @@ This arises simply from the fact that reads and writes from the different thread
 Picture the `counter()` function running concurrently in two threads.
 Each instance has the goal of increasing the global counter by one, a million times.
 Yet, as we execute this program multiple times, different values will be reached, ranging from 1,000,000 to 2,000,000.
-This is due to operation reordering: since an increment is internally a sequence of "read value" -> "increase" -> "write value", when these instructions get interleaved, multiple threads interfere with each others incrementation, leading to loss of writes.
+This is due to operation reordering: since an increment is internally a sequence of "read value" → "increase" → "write value", when these instructions get interleaved, multiple threads interfere with each others incrementation, leading to loss of writes.
 
 #figure(
   ```rust
@@ -309,7 +306,7 @@ This is due to operation reordering: since an increment is internally a sequence
   }
   // ...
   ```,
-  caption: [Excerpt from the `readdir` trampoline, passing the Rust vector of directory entries into the C filler function.],
+  caption: [Minimal example for a data race.],
 ) <data_race_example>
 
 
@@ -322,7 +319,7 @@ Manually implementing them requires an @unsafe block, since it is up to the prog
 on the other side, types only consisting of ```rust Send```/```rust Sync``` members can have their ```rust Send```/```rust Sync```-ness derived automatically via a macro.
 
 As a side note it should be mentioned that while safe Rust guarantees freedom of data races, code races or deadlocks can still happen.
-We assume that these cannot be prevented in sufficiently powerful languages, as that would require checking every possible combination of thread execution states, which is NP-complete in recursion to the halting problem.
+We assume that these cannot be prevented in sufficiently powerful languages, as that would require checking every possible combination of thread execution states, which is NP-complete in reduction to the halting problem.
 
 === Error handling
 
@@ -333,7 +330,9 @@ This handling is implicit because, since the return type does not inherently enc
 Forgetting to insert such a check almost always leads to unsoundness, since a potential error will be handled as some sort of valid success value.
 Circumstances are even more difficult when dealing with `void` functions, which do not return a value but rely on side effects instead.
 Since no return value handling is required for "normal", non-error code paths, the chance of forgetting to check for errors is increased again.
-Although some C compilers define custom extension attributes that can annotate a function to emit a warning when the function's result is unused#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html], no standardized solution exists @tian2017automatically.
+The C standard @cppreference defines a `[[nodiscard]]` attribute which, attached to a function, "encourages the compiler to issue a warning" when the function's return value is not used.
+That means, even with this attribute attached, signalling this failure to use an important part of the function's logic is not guaranteed to cause any signalling to the developer.
+Before that, some C compilers had defined custom extension attributes that implemented similar behaviour#footnote[https://gcc.gnu.org/onlinedocs/gcc/Common-Attributes.html].
 
 Rust solves this issue by combining the strong type system guarantees with sum types, also known as tagged unions.
 Unions, as they are used in C, are usually only useful in implementing low-level data structures or protocols where memory efficiency is of grand importance.
@@ -535,7 +534,6 @@ We include reasoning for every categorization, and if deemed non-preventable, we
 // describe design decisions
 // tables with pro/cons, interactions of components
 
-// FIXME @important: image rendering
 #figure(
   [#align(center, [#image("images/architecture.png", width: 80%)])],
   caption: "High level architecture overview of our wrapper library.",
@@ -544,7 +542,7 @@ We include reasoning for every categorization, and if deemed non-preventable, we
 @architecture.png shows the architecture we chose for our project.
 Wrapping around generated bindings to the underlying C code of @libfuse, it exposes a number of Rust equivalents for relevant data types.
 These higher-level models include correctness checks on all properties where that is feasible, therefore significantly decreasing the surface for errors on the filesystem implementor's side, which is the main goal of our thesis.
-As central interface, a ```rust Filesystem``` trait is provided, which closely models the underlying ```c fuse_operations``` as a collection of relevant callbacks which a filesystem must provide, and which in turn constitute the main functionality of that filesystem.
+As the central interface, a ```rust Filesystem``` trait is provided, which closely models the underlying ```c fuse_operations``` as a collection of relevant callbacks which a filesystem must provide, and which in turn constitute the main functionality of that filesystem.
 The ```rust Filesystem``` trait achieves these advantages by utilizing the constructed higher-level type mappings.
 
 The following sections present a detailed elaboration of the concrete structure of our implementation, as well as the conditions and limitations exacted by our chosen frameworks.
@@ -597,7 +595,7 @@ Because @libfuse calls all our callbacks with at least one C pointer, we have to
 3. When dealing with non-const pointers, care must be taken to not create a shared reference to it.
   Const pointers do not matter in that aspect, since it is impossible to modify values through them, given they are not cast to non-const pointers.
 4. This only matters when primitive C-style casts or ```rust mem::transmute()``` /* todo explain? define? quote? */ are used, as otherwise the Rust typesystem protects us from writing values of the wrong type, even inside unsafe blocks.
-  Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore usually better to avoid this.
+  Writing to a pointer can involve writing raw bytes; if that is required, extra care must be taken, and it is therefore safer to avoid this.
 
 === Strings and Unicode <ch_impl.strings_unicode>
 
@@ -651,7 +649,7 @@ Wrapping the call to user code inside this function ensures that no panic will b
           .and_then(|inner| inner.map_err(|e| (format!("Error in user code `{fs}::{method}`"), e)))
   }
   ```,
-  caption: [An exemplary trampoline function signature implementing compile-time static dispatch via generics],
+  caption: [An exemplary trampoline (@ch_impl.init) function signature implementing compile-time static dispatch via generics],
 ) <catch_unwind>
 
 == FUSE operations
@@ -718,7 +716,7 @@ Some of the filler functions parameters correspond to entry metadata, others, li
           filler_fn(
               data_ptr,
               entry_as_c_string.as_ptr(),
-              ptr::null(), /* setting `stat` struct to NULL, as per `hello.c` */
+              ptr::null(), /* setting `stat` struct to NULL, as per libfuse example `hello.c` */
               0,           /*: offset */
               libfuse::fuse_fill_dir_flags_FUSE_FILL_DIR_DEFAULTS,
           )
@@ -732,8 +730,6 @@ Some of the filler functions parameters correspond to entry metadata, others, li
   ```,
   caption: [Excerpt from the `readdir` trampoline, passing the Rust vector of directory entries into the C filler function.],
 ) <readdir_filler_fn>
-
-// FIXME also: add code snippets to this and `getattr`
 
 === read
 
@@ -753,9 +749,12 @@ Because we use `unsafe`, we documented the assumptions made and invariants we ch
 
 #figure(
   ```rust
-    // Safety: we checked that the buffer is big enough to hold the returned data (if `size` argument was correct).
-    //         Also we checked that the pointer is aligned and non-null.
-    //         Also, the areas cannot overlap, since the Rust vector has reserved its own memory.
+    // Safety:
+    // - we checked that the buffer is big enough to hold
+    //   the returned data (if `size` argument was correct).
+    // - Also we checked that the pointer is aligned and non-null.
+    // - Also, the areas cannot overlap, since the Rust vector has
+    //   reserved its own memory.
     unsafe {
         ptr::copy_nonoverlapping(
             result.content.as_ptr(),
@@ -781,14 +780,11 @@ There are two basic options how to use the trampolines:
 
 A way to implement option 1 is provided in the form of a ```c void *private_data``` pointer that can be passed to @libfuse during filesystem registration. This pointer can contain arbitrary user-specified data, and is not used by @libfuse except for making it available to every fuse operation via the ```c fuse_get_context```#footnote[https://libfuse.github.io/doxygen/fuse_8h.html#a5fce94a5343884568736b6e0e2855b0e] function.
 
-Since it is possible to store a Rust pointer inside a C void pointer, @libfuse_wrapper can submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method.
-This has the following disadvantages:
-- Decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking that is one of Rusts fortes in the undertaking of creating safe systems-level code.
-Manual care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory.
+Since it is possible to store a Rust pointer inside a C void pointer, @libfuse_wrapper could submit a pointer to the user implementation as payload for `private_data`, then let each trampoline poll the FUSE context struct, cast the void pointer back to a trait object reference and dispatch into the corresponding trait method.
+This has the disadvantage that decaying a managed Rust reference into a raw pointer loses the advantage of lifetime tracking, which is one of Rusts fortes in the undertaking of creating safe systems-level code.
+Extra care has to be taken not to invoke a use-after-free, accessing an uninitialized or unauthorized memory location or --- in the best case --- simply leaking memory.
 In fact, the safest option would be to initialize this data pointer once, and then never free it, since it is the dealloc part that introduces memory unsafety to a system, and even if leaking memory (and not calling destructors) is acceptable, since @libfuse passes around non-const pointers to everything, bugs at any point of both our trampolines and @libfuse can easily lead to access of corrupted pointers and therefore to @UB.
 This is usually a tradeoff that must be accepted when dealing with FFI into unsafe languages, but should be mitigated whenever feasible.
-
-// FIXME no second disadvantage?
 
 Both disadvantages would in theory be prevented by a solution modeled after option 2.
 Fortunately, with the use of generics, Rust includes the tools to implement such a solution.
@@ -821,7 +817,7 @@ Otherwise, runtime checks are emitted to still provide correctness, but at the d
 It would be common practice in low-level Rust crates to provide ```rust *_unchecked()``` variants for these runtime-checked methods, to give users the choice of circumventing those checks and trading performance for possible @UB.
 Due to the goals of this work, and time constraints, this was mostly skipped.
 
-=== Typed builder <ch_impl.typed_builder>
+=== Typestate builder <ch_impl.typed_builder>
 
 A pattern that is often encountered in Rust is a _builder_.
 It tries to solve the problem of value creation, where, for big types, many values must be provided, some of which are interdependant or introduce combined constraints, and some are only available at different times.
@@ -939,7 +935,9 @@ Since all intermediate types are specializations of a general builder type, ther
 
 While a typestate builder has many advantages in statical correctness, it does not work well with non-linear control flow, such as conditional blocks and loops.
 That is because every state of the builder is effectively a different type, and Rust does not allow items to have different types depending on a branch.
-This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value/* FIXME example */ (@typestate_builder_conditional).
+This is encountered frequently when dealing with complex generics, and while staying inside this type abstraction, there is no solution besides avoiding conditionally setting fields, and instead executing the conditional code only while calculating the value  (@typestate_builder_conditional).
+Analogously, passing a partially completed typestate builder to another function or storing it as state only works with the exact type that is specified for the parameter or variable at compile-time.
+Runtime builders avoid this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
 
 #figure(
   ```rust
@@ -958,12 +956,7 @@ This is encountered frequently when dealing with complex generics, and while sta
   caption: [An illustration of the problems when using the typestate pattern in conditional blocks.],
 ) <typestate_builder_conditional>
 
-Runtime builders do not have this issue, as every builder state has the same type, and the information of which field has been initialized is usually stored through optional types.
-
-Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known and flexibility with runtime checks when it is not.
-
-
-// FIXME @typed_builder_docste_builder_manual_2>
+Because of the tradeoffs discussed between the different solutions, it can be advantageous to provide the user with multiple approaches, enabling them to choose whatever tool appropriate for the context. For example, we chose to provide both a type builder and a runtime builder for our ```rust FileMode``` struct, allowing correctness when flow of execution is well-known and flexibility with runtime checks when it is not (@ch_impl.file_mode).
 
 // - question: how do I model type creation?
 //   - free function: no named parameters, gets unreadable quickly, no optional parameters
@@ -981,8 +974,6 @@ Because of the tradeoffs discussed between the different solutions, it can be ad
 // - da für jeden einsatzzweck ein anderes pattern optimal sein kann, habe ich mehrere für meine struct(s) implementiert
 // TODO table?
 
-
-
 === `stat` <ch_stat>
 
 The @libfuse `stat` struct is very similar to the namesake found in @POSIX. Both describe an entry in an abstract filesystem, and contain most of its attributes.
@@ -998,8 +989,8 @@ Other fields, like file size and modification time, were not deemed as interesti
 
 === `fuse_file_info`
 
-Although this type is a parameter to every operation implemented, it is optional in every case and seldomly used.
-In fact, due to the limited nature of our experiment, because we do not work with `open` and file descriptors, it can be assumed that the struct never be initialized.
+Although this type is a parameter to every operation implemented, it is optional in every case and seldom used.
+In fact, due to the limited nature of our experiment, because we do not work with `open` and file descriptors, it can be assumed that the struct will never be initialized.
 Therefore, modeling was skipped.
 This does not mean that `fuse_file_info` is not a good candidate for our methodology.
 On the contrary: because it contains a bitset with various flags, these can easily be modeled with associated methods, which at least provide a simple safeguard against erroneous bit operations.
@@ -1017,13 +1008,12 @@ Therefore, providing a builder to elegantly construct such values --- as is need
 We will implement two builders: one as a typestate builder, and the other as a classic runtime builder.
 This provides maximum flexibility for the user, since typestate builders can only be used when codepaths for initialization are static, without branching or loops.
 The runtime builder complements the API for those cases, at the cost of runtime overhead and less compile-time correctness checks.
-Both implementations will use macros to reduce boilerplate that would otherwise be significant and impractical.
-// FIXME cite doooooocsdocs
+Both implementations will use macros to reduce the significant boilerplate that would otherwise be needed.
 
 @filemode_typed_builder shows the typestate builder implementation.
 The general pattern is to add fields to the builder struct for which builder setters should be generated, and optionally annotate them for special behavior.
 In our example the `setter(strip_bool)` annotation is used, which changes the signature of the setter method generated for a boolean field from ```rust fn foo(value: bool)``` to ```rust fn foo()```, where one-time invocation corresponds to a value of ```rust true```, and zero-time invocation to a value of ```rust false```.
-This is done to increase ergonomy.
+This is done to increase ergonomics.
 The struct itself is then annotated with the ```rust TypedBuilder``` derive macro, which results in the declared struct being nothing more than a pseudo-data-structure; a schema through which the resulting builder type is generated.
 The `build_method(into = FileMode)` ensures that the output type of the builder is not itself, but our target type ```rust FileMode```.
 Conversion is done idiomatically through Rust's ```rust From``` and ```rust From``` traits.
@@ -1098,73 +1088,73 @@ Since the C API does require an unsigned 32-bit integer, we override this behavi
   caption: [Typestate builder implementation of FileMode.],
 ) <openflags>
 
-=== `OpenFlags`
+// === `OpenFlags`
 
-`OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp enum to model flags which are internally represented as integers.
+// `OpenFlags` --- a set of bitflags around the mode of an open file handle, like read/write access, truncating, creating --- bears resemblance to (@ch_impl.file_mode), in that we again need to model a classic @cpp enum to model flags which are internally represented as integers.
 
 
-#figure(
-  ```rust
-    /// This is repr(i32) because the target bitset (fuse_file_info::flags) and the `libc` constants are also i32.
-      #[repr(i32)]
-      enum OpenFlag {
-          Append = libc::O_APPEND,
-          Readonly = libc::O_RDONLY,
-          Writeonly = libc::O_WRONLY,
-          ReadPlusWrite = libc::O_RDWR,
-          Truncate = libc::O_TRUNC,
-          // TODO (maybe) exhaust
-      }
+// #figure(
+//   ```rust
+//     /// This is repr(i32) because the target bitset (fuse_file_info::flags) and the `libc` constants are also i32.
+//       #[repr(i32)]
+//       enum OpenFlag {
+//           Append = libc::O_APPEND,
+//           Readonly = libc::O_RDONLY,
+//           Writeonly = libc::O_WRONLY,
+//           ReadPlusWrite = libc::O_RDWR,
+//           Truncate = libc::O_TRUNC,
+//           // TODO (maybe) exhaust
+//       }
 
-      pub struct OpenFlags(i32);
+//       pub struct OpenFlags(i32);
 
-      impl OpenFlags {
-          bitflag_accessor!(i32, append, OpenFlag::Append);
-          bitflag_accessor!(i32, readonly, OpenFlag::Readonly);
-          bitflag_accessor!(i32, writeonly, OpenFlag::Writeonly);
-          bitflag_accessor!(i32, read_plus_write, OpenFlag::ReadPlusWrite);
-          bitflag_accessor!(i32, truncate, OpenFlag::Truncate);
-      }
-  }
-  ```,
-  caption: [OpenFlag enum .],
-) <openflags>
+//       impl OpenFlags {
+//           bitflag_accessor!(i32, append, OpenFlag::Append);
+//           bitflag_accessor!(i32, readonly, OpenFlag::Readonly);
+//           bitflag_accessor!(i32, writeonly, OpenFlag::Writeonly);
+//           bitflag_accessor!(i32, read_plus_write, OpenFlag::ReadPlusWrite);
+//           bitflag_accessor!(i32, truncate, OpenFlag::Truncate);
+//       }
+//   }
+//   ```,
+//   caption: [OpenFlag enum .],
+// ) <openflags>
 
-#figure(
-  ```rust
-  macro_rules! bitflag_accessor {
-      ($inner_type:ty, $name:ident, $val:path) => {
-          fn $name(&self) -> bool {
-              self.0 & $val as $inner_type != 0
-          }
-      };
-  }
-  ```,
-  caption: [The ```rust bitflag_accessor!()``` macro.],
-) <bitflags_accessor>
+// #figure(
+//   ```rust
+//   macro_rules! bitflag_accessor {
+//       ($inner_type:ty, $name:ident, $val:path) => {
+//           fn $name(&self) -> bool {
+//               self.0 & $val as $inner_type != 0
+//           }
+//       };
+//   }
+//   ```,
+//   caption: [The ```rust bitflag_accessor!()``` macro.],
+// ) <bitflags_accessor>
 
-#figure(
-  ```rust
-  impl OpenFlags {
-      fn append(&self) -> bool {
-          self.0 & OpenFlag::Append as i32 != 0
-      }
-      fn readonly(&self) -> bool {
-          self.0 & OpenFlag::Readonly as i32 != 0
-      }
-      fn writeonly(&self) -> bool {
-          self.0 & OpenFlag::Writeonly as i32 != 0
-      }
-      fn read_plus_write(&self) -> bool {
-          self.0 & OpenFlag::ReadPlusWrite as i32 != 0
-      }
-      fn truncate(&self) -> bool {
-          self.0 & OpenFlag::Truncate as i32 != 0
-      }
-  }
-  ```,
-  caption: [The expanded code from ```rust bitflag_accessor!()```.],
-) <bitflags_accessor_expanded>
+// #figure(
+//   ```rust
+//   impl OpenFlags {
+//       fn append(&self) -> bool {
+//           self.0 & OpenFlag::Append as i32 != 0
+//       }
+//       fn readonly(&self) -> bool {
+//           self.0 & OpenFlag::Readonly as i32 != 0
+//       }
+//       fn writeonly(&self) -> bool {
+//           self.0 & OpenFlag::Writeonly as i32 != 0
+//       }
+//       fn read_plus_write(&self) -> bool {
+//           self.0 & OpenFlag::ReadPlusWrite as i32 != 0
+//       }
+//       fn truncate(&self) -> bool {
+//           self.0 & OpenFlag::Truncate as i32 != 0
+//       }
+//   }
+//   ```,
+//   caption: [The expanded code from ```rust bitflag_accessor!()```.],
+// ) <bitflags_accessor_expanded>
 
 
 
@@ -1226,14 +1216,14 @@ Switching to the unstable toolchain, which has a shorter release cycle and does 
 
 To evaluate the effectiveness of our approach, we collected a sample of CVEs found in the filesystem modules of the Linux kernel in recent years.
 We then categorized them based on whether the approach discussed here would have been effective in preventing them.
-We also implemented a simple prototype filesystem using our wrapper to provide a reference point for the ergonomy and expressiveness of the API.
+We also implemented a simple prototype filesystem using our wrapper to provide a reference point for the ergonomics and expressiveness of the API.
 
 == CVEs
 
-#gls("CVE", plural: true, first: true) /* FIXME @maybe long form */are standardized identifiers for publicly disclosed software vulnerabilities. Maintained by the MITRE Corporation, the CVE system provides a consistent way to reference and track security issues across tools, databases, and research. This standardization facilitates communication, comparison, and aggregation of vulnerability data.
+#gls("CVE", plural: true, first: true) are standardized identifiers for publicly disclosed software vulnerabilities. Maintained by the MITRE Corporation, the CVE system provides a consistent way to reference and track security issues across tools, databases, and research. This standardization facilitates communication, comparison, and aggregation of vulnerability data.
 
 Since our area of research centers around filesystems, we collected a sample of recent CVEs that were found inside the Linux kernel filesystem modules.
-A filter query (@cve_query) was crafted for the database to provide CVEs matching our criteria.// FIXME muss ich mehr drauf eingehen?
+A filter query (@cve_query) was crafted for the database to provide CVEs matching our criteria.
 From this selection, a suitable subset was extracted, focusing on CVEs where the description and metadata were complete, and the applicability of our approach could be assessed with certainty.// FIXME @ask @cwe-top25-2025 ist jetzt rausgefallen. noch geschickt einbauen oder nicht so wichtig?
 
 #figure(
@@ -1266,8 +1256,8 @@ The following table shows the result of our evaluation, where each chosen CVE is
       [🟡],*/
 
       [2025-21646],
-      [@procfs expects maximum path length of 255, this was overseen by @afs implementors, leading to a runtime error],
-      [if @procfs API were implemented per my concept, maximum path length could be encoded in the type so compiler could warn/error on oversight],
+      [@procfs expects maximum path length of 255, this was overseen by @afs implementors, leading to a runtime error.],
+      [If @procfs API were implemented per my concept, maximum path length could be encoded in the type so compiler could warn/error on oversight.],
       [🟢],
 
       [2024-55641],
@@ -1329,7 +1319,7 @@ To test our wrapper library, we created a minimal filesystem using it.
 It implements only three callbacks --- `getattr`, `read`, `open` --- as this is enough to provide a complete, usable filesystem #cite(<libfuse_docs>, supplement: "p. example_2hello_8c.html").
 
 This filesystem is read-only, since that narrows down the functionality we have to implement.
-Files are declared in a static global array, and are even associated with a closure object, to facilitate files with dynamic content.
+Files are declared in a static global array, and are further associated with a closure object, to facilitate files with dynamic content.
 The dynamic aspect was chosen deliberately, because it leaves less room for the wrapper to assume properties of the filesystem, which should lead to an increased ability to detect flaws.
 The following example (@hello2_file_table) shows a global file table of two entries: `time.txt`, which always reads the current system date and time, and `pid.txt`, which always reads the ID of the filesystem process.
 This dynamic property of our test filesystem allows us to increase confidence in our abstractions by providing less stability on which to accidentally depend.
@@ -1368,8 +1358,8 @@ Strong type systems allow modeling contracts around APIs and data structures ins
 This is an improvement over documenting these as text for programmers to read and uphold, which increases cognitive load, introduces error possibilities and increases training period.
 We created an abstraction layer providing high-level Rust bindings to the `libfuse` C library, uplifting the types involved into carefully constructed Rust equivalents, where invariants and guarantees are compiler-verified, with a fallback on emitting automatic runtime checks where that is not possible.
 We collected design principles for safe systems programming and methodically applied them to the chosen subset of filesystem operations necessary, while having a rich toolset  for a minimal filesystem implementation.
-We then evaluated a sample of @CVE:pl from the linux kernel filesystem subsystems over the past five years, assessing if --- and to what degree --- these vulnerabilities would have been prevented with the method we described.
-A minimal filesystem in Rust was created, both to test the practical viability and improve the development phase of our wrapper library, and to give a qualitative assessment of safety and ergonomy aspects of the API.
+We then evaluated a sample of @CVE:pl from the linux kernel filesystem subsystems over the past five years, assessing if --- and to what degree --- these vulnerabilities could have been prevented with the method we described.
+A minimal filesystem in Rust was created, both to test the practical viability and improve the development phase of our wrapper library, and to give a qualitative assessment of safety and ergonomics aspects of the API.
 
 We found that our approach could in fact increase the safety of filesystems currently included in the Linux kernel.
 Furthermore, since most improvements were implemented as compile-time verifications, it can be assumed that their runtime impact will be nonexisting, acknowledging the need for @OS routines to be maximally performant.
@@ -1397,7 +1387,7 @@ Our wrapper library, however, has to handle a large amount of pointer parameters
 Our current model is therefore to trust @libfuse and the pointers we are passed.
 Additionally, it has proven impossible to correctly generate references with appropriate lifetimes from raw pointers.
 As a practical solution, and to reduce the number of bugs that could have been introduced through our wrapper in using this method, we opted instead to create owned Rust objects from C parameters through copying.
-This introduces some overhead, although in practice the effect could be diminishingly small --- memory copies are usually very fast on modern machines --- and should be measured before taken into account.
+This introduces some overhead, although in practice the effect could be diminishingly small --- memory copies are usually very fast on modern machines --- and should be measured before taking further action.
 
 = Future work <ch_future>
 
@@ -1439,11 +1429,11 @@ For this problem, two solutions could be considered.
   Adoption through a future project should be possible with justifiable expenditure.
 
 Static analyzers and sanitizers could be employed to increase security beyond what is possible in pure Rust code, especially regarding unsafe Rust and foreign libraries.
-The unstable channel of the Rust toolchain contains options for using a variety of the renown LLVM sanitizers with Rust projects #footnote[https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html].
+The unstable channel of the Rust toolchain contains options for using a variety of the renowned LLVM sanitizers with Rust projects #footnote[https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html].
 This is made easy by the fact that Rust uses LLVM as compiler backend.
-Alternatively, a popular tool in the Rust community is Miri#footnote[https://github.com/rust-lang/miri], which can execute Rust intermediate byte inside a sandbox to detect @UB.
+Alternatively, a popular tool in the Rust community is Miri#footnote[https://github.com/rust-lang/miri], which can execute Rust intermediate bytecode inside a sandbox to detect @UB.
 Unfortunately, as of now, it is largely unable to work with code that uses FFI.
-Further investigation into proper tooling is required, and could provide some potential benefits in reliability testing of our and similar solutions.
+Further investigation into proper tooling is required, and could provide some potential benefits in reliability testing of our --- and similar --- solutions.
 
 There exist concepts that extend those of Rusts typesystem and can potentially provide even more statically verified correctness, namely dependent/liquid/refinement types.
 One of these projects is Flux @flux-rs_github @lehmann2023flux.
